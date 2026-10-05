@@ -126,6 +126,12 @@ export function generateSample(db: Db, mode: AppMode, today: Date = new Date()):
         for (let k = 0; k < 3; k++) spend(day(1 + Math.floor(rand() * 28)), card, cents(3, 28), pick(['PRESTO FARE', 'UBER *TRIP', 'PETRO-CANADA', 'PARKING HONK']), cTrans, key)
         if (rand() < 0.8) spend(day(1 + Math.floor(rand() * 28)), card, cents(20, 140), pick(['AMAZON.CA', 'H&M', 'WINNERS', 'IKEA']), cShop, key)
         if (rand() < 0.5) spend(day(1 + Math.floor(rand() * 28)), card, cents(12, 55), 'SHOPPERS DRUG MART', cHealth, key)
+        // The bank charges a monthly account fee and gives it back the same day (so the app shows it as a refunded charge, not a bill).
+        if (day(1) <= now) {
+          const fees = cat(id, 'Bank fees & interest')
+          add({ profile: id, account: chq, date: iso(day(1)), cents: -1495, description: 'MONTHLY ACCOUNT FEE', category: fees, kind: 'expense' })
+          add({ profile: id, account: chq, date: iso(day(1)), cents: 1495, description: 'MONTHLY ACCOUNT FEE REBATE', category: fees, kind: 'refund' })
+        }
         // Savings, interest, and paying the card off (the payment is a transfer, not spending).
         const sd = day(16)
         if (sd <= now) pairTransfer({ profile: id, account: chq }, { profile: id, account: sav }, iso(sd), 20_000 + Math.round(rand() * 5) * 2500, 'TRANSFER TO SAVINGS', false)

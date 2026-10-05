@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
+import { txnPreset } from '../txnLink'
+import type { Page, TxnPreset } from '../App'
 import { Card, ErrorBox } from '../components/ui'
 import { formatCents } from '../format'
 import type { AccountInfo, CategoryInfo, Profile } from '../../db/queries'
@@ -7,7 +9,7 @@ import type { ReviewItem, Decision } from '../../db/review'
 
 type Choice = Decision['kind'] | ''
 
-function ReviewCard({ item, profileId, accounts, categories, partner, onDone, onCategoryCreated }: { item: ReviewItem; profileId: number; accounts: AccountInfo[]; categories: CategoryInfo[]; partner: { id: number; name: string } | null; onDone: (msg: string) => void; onCategoryCreated: () => void }) {
+function ReviewCard({ item, goto, profileId, accounts, categories, partner, onDone, onCategoryCreated }: { item: ReviewItem; goto: (p: Page, pre?: TxnPreset) => void; profileId: number; accounts: AccountInfo[]; categories: CategoryInfo[]; partner: { id: number; name: string } | null; onDone: (msg: string) => void; onCategoryCreated: () => void }) {
   const moneyIn = item.amountCents > 0
   const [choice, setChoice] = useState<Choice>('')
   const [categoryId, setCategoryId] = useState('')
@@ -55,7 +57,7 @@ function ReviewCard({ item, profileId, accounts, categories, partner, onDone, on
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <strong>{item.description}</strong>
-          <div className="muted">{item.date} · {item.account}</div>
+          <div className="muted">{item.date} · {item.account} · <button className="txn-link" title="Show the days around this transaction in its account" onClick={() => goto('transactions', txnPreset(item))}>See it in the account</button></div>
           {item.notes && <div className="muted">Note: {item.notes}</div>}
         </div>
         <div className={`num ${moneyIn ? 'pos' : ''}`} style={{ fontSize: 20, fontWeight: 700 }}>{formatCents(item.amountCents, { sign: true })}</div>
@@ -97,7 +99,7 @@ function ReviewCard({ item, profileId, accounts, categories, partner, onDone, on
   )
 }
 
-export function Review({ profile, accounts, categories, onChanged, partner }: { profile: Profile; accounts: AccountInfo[]; categories: CategoryInfo[]; onChanged: () => void; partner: { id: number; name: string } | null }) {
+export function Review({ profile, goto, accounts, categories, onChanged, partner }: { profile: Profile; goto: (p: Page, pre?: TxnPreset) => void; accounts: AccountInfo[]; categories: CategoryInfo[]; onChanged: () => void; partner: { id: number; name: string } | null }) {
   const [items, setItems] = useState<ReviewItem[] | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const load = useCallback(() => { void api('reviewQueue', profile.id).then(setItems) }, [profile.id])
@@ -112,7 +114,7 @@ export function Review({ profile, accounts, categories, onChanged, partner }: { 
       {items === null ? <p className="muted">Loading…</p> : items.length === 0 ? <Card><h2>All clear</h2><p className="sub">Nothing needs your review.</p></Card> : (
         <>
           <p className="muted">{items.length} to review</p>
-          {items.map((i) => <ReviewCard key={i.id} item={i} profileId={profile.id} accounts={accounts} categories={categories} partner={partner} onDone={done} onCategoryCreated={onChanged} />)}
+          {items.map((i) => <ReviewCard goto={goto} key={i.id} item={i} profileId={profile.id} accounts={accounts} categories={categories} partner={partner} onDone={done} onCategoryCreated={onChanged} />)}
         </>
       )}
     </>

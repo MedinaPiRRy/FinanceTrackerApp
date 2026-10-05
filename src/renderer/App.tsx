@@ -27,7 +27,7 @@ import type { AccountInfo, CategoryInfo, Profile } from '../db/queries'
 import type { Owner } from '../db/household'
 
 export type Page = 'dashboard' | 'monthly' | 'transactions' | 'import' | 'review' | 'accounts' | 'cash' | 'recurring' | 'insights' | 'forecast' | 'budget' | 'goals' | 'settings'
-export interface TxnPreset { insightId?: string; text?: string; accountId?: number; categoryId?: number; from?: string; to?: string; reviewOnly?: boolean }
+export interface TxnPreset { insightId?: string; text?: string; accountId?: number; categoryId?: number; from?: string; to?: string; reviewOnly?: boolean; txnId?: number }
 
 const NAV: { page: Page; label: string; icon: string }[][] = [
   [
@@ -189,9 +189,9 @@ function Shell() {
               {page === 'dashboard' && <HouseholdDashboard goto={goto} />}
               {page === 'transactions' && <Transactions profile={profile} accounts={allAccounts} categories={categories} preset={preset} goto={goto} household={{ owners }} />}
               {page === 'import' && <Import profile={profile} accounts={accounts} categories={categories} onChanged={changed} goto={goto} partner={null} />}
-              {page === 'review' && <Review profile={profile} accounts={accounts} categories={categories} onChanged={changed} partner={null} />}
+              {page === 'review' && <Review profile={profile} goto={goto} accounts={accounts} categories={categories} onChanged={changed} partner={null} />}
               {page === 'accounts' && <Accounts profile={profile} household goto={goto} onChanged={changed} />}
-              {page === 'budget' && <HouseholdBudget onChanged={changed} />}
+              {page === 'budget' && <HouseholdBudget onChanged={changed} goto={goto} />}
               {page === 'forecast' && <Forecast profile={profile} goto={goto} />}
               {page === 'goals' && <HouseholdGoals profile={profile} accounts={allAccounts} categories={categories} goto={goto} />}
               {page === 'settings' && <Settings profile={{ ...profile, kind: 'household' }} partner={null} sample={status.sample} onLeaveSample={leftSample} />}
@@ -201,7 +201,7 @@ function Shell() {
               {page === 'dashboard' && <Dashboard profile={profile} categories={categories} goto={goto} />}
               {page === 'transactions' && <Transactions profile={profile} accounts={accounts} categories={categories} preset={preset} goto={goto} />}
               {page === 'import' && <Import profile={profile} accounts={accounts} categories={categories} onChanged={changed} goto={goto} partner={partner} />}
-              {page === 'review' && <Review profile={profile} accounts={[...accounts, ...sharedAccounts]} categories={categories} onChanged={changed} partner={partner} />}
+              {page === 'review' && <Review profile={profile} goto={goto} accounts={[...accounts, ...sharedAccounts]} categories={categories} onChanged={changed} partner={partner} />}
               {page === 'accounts' && <Accounts profile={profile} goto={goto} onChanged={changed} />}
               {page === 'cash' && <Cash profile={profile} accounts={accounts} categories={categories} onChanged={changed} />}
               {page === 'insights' && <Insights profile={profile} categories={categories} goto={goto} openId={preset.insightId} />}

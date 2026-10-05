@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
+import { BudgetDrill } from '../components/BudgetDrill'
 import { Card, ErrorBox, ProgressBar, StateBadge } from '../components/ui'
 import { formatCents, monthLabel, today } from '../format'
 import { SuggestBudgets } from '../components/SuggestBudgets'
@@ -38,6 +39,8 @@ export function Budget({ profile, categories, goto, onChanged }: { profile: Prof
   const [picked, setPicked] = useState<number[]>([])
 
   useEffect(() => { void api('dashboard', profile.id).then((d) => { if (d) { setMonths(d.availableMonths); setMonth((m) => m ?? d.month) } else { setMonths([thisMonth]); setMonth((m) => m ?? thisMonth) } }) }, [profile.id])
+  const [drillId, setDrillId] = useState<number | null>(null)
+  const drillLoad = useCallback(() => api('budgetDrill', profile.id, drillId!, month!), [profile.id, drillId, month])
   const load = useCallback(() => { if (month) void api('budgets', profile.id, month).then(setReport).catch((e: Error) => setError(e.message)) }, [profile.id, month])
   useEffect(load, [load])
 
@@ -79,7 +82,7 @@ export function Budget({ profile, categories, goto, onChanged }: { profile: Prof
   return (
     <>
       <div className="page-head">
-        <div><h1>Budget</h1><p>Monthly budgets by category. Spending is expenses minus refunds; transfers never count.</p></div>
+        <div><h1>Budget</h1><p>Monthly budgets by category. Spending is expenses minus refunds; transfers never count. Click a budget's name to see its transactions by account.</p></div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
           <label className="field">Month<select value={month} onChange={(e) => setMonth(e.target.value)}>{[...months].reverse().map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select></label>
           <button className="btn primary" onClick={startNew}>Add budget</button>
@@ -102,6 +105,7 @@ export function Budget({ profile, categories, goto, onChanged }: { profile: Prof
         <Card className="stat"><div className="label">Over budget</div><div className={`value num ${over ? 'neg' : ''}`}>{over} of {report.lines.length}</div></Card>
       </div>
 
+      {drillId !== null && <BudgetDrill load={drillLoad} goto={goto} onClose={() => setDrillId(null)} />}
       <Card>
         {report.lines.length === 0 ? <p className="muted">No budgets yet. Add one to start tracking a category.</p> : (
           <div className="table-wrap"><table>
@@ -110,7 +114,7 @@ export function Budget({ profile, categories, goto, onChanged }: { profile: Prof
             <tbody>
               {report.lines.map((l) => (
                 <tr key={l.id}>
-                  <td>{l.name}<div className="muted" style={{ fontSize: 12 }}>{l.categoryNames.join(' · ') || 'No categories yet'}</div></td>
+                  <td><button className="txn-link" title="See the transactions in this budget, by account" onClick={() => setDrillId(l.id)}>{l.name}</button><div className="muted" style={{ fontSize: 12 }}>{l.categoryNames.join(' · ') || 'No categories yet'}</div></td>
                   <td className="r num">{formatCents(l.budgetCents)}</td>
                   <td className="r num">{formatCents(l.spentCents)}{l.projectedCents != null && l.projectedCents > l.budgetCents && l.state !== 'over' && <div className="muted" style={{ fontSize: 12 }}>on pace for {formatCents(l.projectedCents)}</div>}</td>
                   <td className={`r num ${l.remainingCents < 0 ? 'neg' : ''}`}>{l.remainingCents < 0 ? '-' : ''}{formatCents(Math.abs(l.remainingCents))}</td>

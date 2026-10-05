@@ -30,6 +30,14 @@ export function Transactions({ profile, accounts, categories, preset, goto, hous
   useEffect(() => { if (household) void api('groupNames').then(setGroupNames) }, [household])
   const [result, setResult] = useState<{ rows: TxnRow[]; total: number; sumCents: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // the row we were sent to is lit for about a second so the person can see which one it is
+  const [flashId, setFlashId] = useState<number | null>(preset.txnId ?? null)
+  useEffect(() => {
+    if (flashId === null || !result?.rows.some((r) => r.id === flashId)) return
+    document.querySelector(`[data-txn-id="${flashId}"]`)?.scrollIntoView({ block: 'center' })
+    const t = setTimeout(() => setFlashId(null), 1600)
+    return () => clearTimeout(t)
+  }, [flashId, result])
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedText(text), 250)
@@ -99,7 +107,7 @@ export function Transactions({ profile, accounts, categories, preset, goto, hous
             </thead>
             <tbody>
               {result?.rows.map((r) => (
-                <tr key={r.id} className={r.reviewReason ? 'review' : ''}>
+                <tr key={r.id} data-txn-id={r.id} className={`${r.reviewReason ? 'review' : ''}${r.id === flashId ? ' flash' : ''}`.trim()}>
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>{r.date}</td>
                   {household && <td>{r.person === 'Household' ? 'Shared' : r.person}</td>}
                   <td>{r.description}{r.notes && <div className="muted">{r.notes}</div>}{r.reviewReason && <div><button className="badge warn" style={{ cursor: 'pointer' }} onClick={() => goto('review')} title={r.reviewReason}>Needs review</button></div>}</td>

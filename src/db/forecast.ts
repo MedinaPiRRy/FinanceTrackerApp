@@ -6,6 +6,7 @@ import { lastCompleteMonths, monthEnd, monthStart } from '../core/budgets'
 import { monthlyCostCents, type Frequency } from '../core/recurring'
 import { normalizeKey } from '../core/normalize'
 import { nameKeys, sameMerchant } from '../core/recurringDetect'
+import { refundedItemIds } from './recurringDetect'
 import { applyWhatIf, emptyWhatIf, projectForecast, type ExpenseLine, type ForecastInput, type ForecastResult, type GoalSaving, type IncomeStream, type WhatIf } from '../core/forecast'
 import { listBudgets } from './budgets'
 import { listGoals } from './goals'
@@ -66,7 +67,8 @@ export function getForecast(db: Db, profileId: number, today: string, opts: { mo
   if (spendMonths.length === 0) notes.push('There is not enough history yet (no complete month of transactions), so income and spending start at zero. Import a month or two of transactions first.')
 
   // ---- tracked recurring items ----
-  const tracked = (db.prepare(`SELECT id, name, direction, amount_cents AS amountCents, frequency, match_key AS matchKey, counts_in_budget AS counts FROM recurring WHERE profile_id IN (${marks}) AND status IN ('active','new','updated') AND frequency != 'irregular'`).all(...ids) as Tracked[])
+  const refundedIds = new Set(ids.flatMap((i) => [...refundedItemIds(db, i, today)]))
+  const tracked = (db.prepare(`SELECT id, name, direction, amount_cents AS amountCents, frequency, match_key AS matchKey, counts_in_budget AS counts FROM recurring WHERE profile_id IN (${marks}) AND status IN ('active','new','updated') AND frequency != 'irregular'`).all(...ids) as Tracked[]).filter((t) => !refundedIds.has(t.id))
   const keysOf = (t: Tracked) => (t.matchKey ? [t.matchKey] : nameKeys(t.name, normalizeKey))
 
   // ---- income ----

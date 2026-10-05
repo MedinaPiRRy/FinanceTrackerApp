@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
+import { txnPreset } from '../txnLink'
 import { Chart, type ChartColors } from '../components/Chart'
 import { Card, ChartCard, Delta, ErrorBox, Segmented, Stat } from '../components/ui'
 import { formatCents, monthLabel, pct, shortMonth } from '../format'
@@ -208,7 +209,7 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
           <div className="card-head"><h2>Largest expenses</h2></div>
           <div className="table-wrap"><table><tbody>
             {data.largestExpenses.map((t) => (
-              <tr key={t.id}><td>{t.date.slice(5)}</td><td>{t.description}<div className="muted">{t.category ?? 'Uncategorized'}</div></td><td className="r num">{formatCents(t.cents)}</td></tr>
+              <tr key={t.id}><td>{t.date.slice(5)}</td><td><button className="txn-link" title="Show this transaction in its account" onClick={() => goto('transactions', txnPreset(t))}>{t.description}</button><div className="muted">{t.category ?? 'Uncategorized'}</div></td><td className="r num">{formatCents(t.cents)}</td></tr>
             ))}
           </tbody></table></div>
         </Card>

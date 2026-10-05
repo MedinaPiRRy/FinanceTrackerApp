@@ -12,6 +12,10 @@ export interface InsightRef {
   text?: string
   budget?: string
   goal?: string
+  /** One specific transaction (with its account and date) so the page can open right on it. */
+  txnId?: number
+  accountId?: number
+  date?: string
 }
 export interface Insight {
   /** Stable across reloads (derived from the text), so a dismissed tip stays dismissed. */
@@ -26,6 +30,8 @@ export interface Insight {
 }
 
 export interface InsightTxn {
+  id?: number
+  accountId?: number
   date: string
   amountCents: number
   kind: string
@@ -128,7 +134,7 @@ export function generateInsights(input: InsightInput): Insight[] {
     .sort((a, b) => a.t.amountCents - b.t.amountCents)
     .slice(0, 3)
   for (const { t, hist } of unusual)
-    out.push({ type: 'anomaly', tone: 'warn', title: `Unusually large ${t.category} purchase: ${t.description}`, detail: `${formatCents(-t.amountCents)} on ${t.date}; your typical ${t.category} transaction is ${formatCents(Math.round(median(hist)))}.` , meaning: 'One purchase far larger than usual for this category. If you expected it, there is nothing to do; if not, it is worth checking it is correct.', ref: { page: 'transactions', category: t.category!, month, text: t.description } })
+    out.push({ type: 'anomaly', tone: 'warn', title: `Unusually large ${t.category} purchase: ${t.description}`, detail: `${formatCents(-t.amountCents)} on ${t.date}; your typical ${t.category} transaction is ${formatCents(Math.round(median(hist)))}.` , meaning: 'One purchase far larger than usual for this category. If you expected it, there is nothing to do; if not, it is worth checking it is correct.', ref: { page: 'transactions', category: t.category!, month, text: t.description, txnId: t.id, accountId: t.accountId, date: t.date } })
 
   // ---- recommendations (point at something to look at, no advice) ----
   const window = series.filter((s) => s.month <= month).slice(-6)

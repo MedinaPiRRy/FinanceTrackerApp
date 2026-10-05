@@ -19,12 +19,12 @@ function Table({ rows, title, note, onEdit, onDelete }: { rows: RecurringRow[]; 
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} style={r.status === 'cancelled' ? { opacity: 0.6 } : undefined}>
-              <td>{r.name}{r.notes && <div className="muted">{r.notes}</div>}</td>
+              <td>{r.name}{r.refunded && <div className="muted">The bank pays this back each time, so it costs nothing.</div>}{r.notes && <div className="muted">{r.notes}</div>}</td>
               <td>{r.account ?? r.paidWith ?? '—'}</td>
               <td>{FREQ[r.frequency]}{r.usualTiming && <div className="muted">{r.usualTiming}</div>}</td>
               <td className="r num">{formatCents(r.amountCents)}</td>
-              <td className="r num">{r.countsInBudget ? formatCents(r.monthlyCents) : <span className="muted">not counted</span>}</td>
-              <td className="r num">{r.countsInBudget ? formatCents(r.annualCents) : <span className="muted">—</span>}</td>
+              <td className="r num">{r.refunded ? <span className="muted">refunded</span> : r.countsInBudget ? formatCents(r.monthlyCents) : <span className="muted">not counted</span>}</td>
+              <td className="r num">{r.refunded ? <span className="muted">—</span> : r.countsInBudget ? formatCents(r.annualCents) : <span className="muted">—</span>}</td>
               <td><span className={`badge ${r.status === 'cancelled' ? '' : r.status === 'irregular' ? 'warn' : 'accent'}`}>{r.status}</span></td>
               <td className="r" style={{ whiteSpace: 'nowrap' }}><button className="btn small" aria-label={`Edit ${r.name}`} onClick={() => onEdit(r)}>Edit</button> <button className="btn small danger" aria-label={`Delete ${r.name}`} onClick={() => onDelete(r)}>Delete</button></td>
             </tr>
@@ -84,6 +84,7 @@ const niceDate = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString
 function Attention({ profile, onChanged }: { profile: Profile; onChanged: () => void }) {
   const [stopped, setStopped] = useState<StoppedItem[]>([])
   const [found, setFound] = useState<RecurringSuggestion[]>([])
+  const [refunded, setRefunded] = useState<RecurringSuggestion[]>([])
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [names, setNames] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
@@ -91,6 +92,7 @@ function Attention({ profile, onChanged }: { profile: Profile; onChanged: () => 
 
   const load = () => {
     void api('recurringStopped', profile.id).then(setStopped).catch((e: Error) => setError(e.message))
+    void api('recurringRefunded', profile.id).then(setRefunded).catch((e: Error) => setError(e.message))
     void api('recurringSuggest', profile.id).then((f) => { setFound(f); setPicked(new Set(f.filter((x) => x.confidence === 'high').map(id))); setNames(Object.fromEntries(f.map((x) => [id(x), x.name]))) }).catch((e: Error) => setError(e.message))
   }
   useEffect(load, [profile.id])
@@ -113,6 +115,24 @@ function Attention({ profile, onChanged }: { profile: Profile; onChanged: () => 
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn" onClick={() => void run(() => api('recurringAnswer', profile.id, s.id, 'cancelled'))}>Yes, it was cancelled</button>
                 <button className="btn" onClick={() => void run(() => api('recurringAnswer', profile.id, s.id, 'active'))}>No, it is still active</button>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+      {refunded.length > 0 && (
+        <Card>
+          <div className="card-head"><h2>Refunded charges</h2></div>
+          <p className="sub" style={{ marginTop: 0 }}>The bank charges these on a schedule but pays each one back (for example a monthly account fee with a rebate for the same amount). They cost you nothing, so they are not counted as bills or in your forecast. Track one anyway if you want it on your list, or hide it.</p>
+          {refunded.map((f) => (
+            <div key={id(f)} style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', padding: '10px 0', borderTop: '1px solid var(--border)' }}>
+              <div>
+                <b>{f.name}</b> <span className="muted">· {formatCents(f.amountCents)} {FREQ[f.frequency]?.toLowerCase()}{f.accountName ? ` · ${f.accountName}` : ''}</span>
+                <div className="muted">Charged {f.occurrences}× since {niceDate(f.firstDate)}, and refunded each time. Net cost: {formatCents(0)}.</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn" onClick={() => void run(() => api('recurringAdd', profile.id, [{ key: f.key, direction: f.direction, name: f.name, keepRefunded: true }]))}>Track anyway</button>
+                <button className="btn" onClick={() => void run(() => api('recurringDismiss', profile.id, f.key, f.direction))}>Hide</button>
               </div>
             </div>
           ))}

@@ -23,7 +23,8 @@ import { getPlanner, savePlanner, resetPlanner, type PlannerEdits } from '../db/
 import { goalIdeas, createGoalsFromIdeas } from '../db/goalIdeas'
 import { insightsFor, insightEvidence } from '../db/insights'
 import { createRecurring, updateRecurring, deleteRecurring, type RecurringInput } from '../db/recurringManage'
-import { suggestRecurring, addDetected, dismissSuggestion, stoppedItems, answerStopped } from '../db/recurringDetect'
+import { budgetDrill, householdBudgetDrill } from '../db/budgetDrill'
+import { suggestRecurring, refundedCharges, addDetected, dismissSuggestion, stoppedItems, answerStopped } from '../db/recurringDetect'
 import { getPartnerAliases, setPartnerAliases, partnerOf } from '../db/partners'
 import { getHouseholdOverview, listHouseholdAccounts, listHouseholdBudgets, householdBudgetReport, createHouseholdBudget, updateHouseholdBudget, deleteHouseholdBudget, listHouseholdGoals, listCategoryGroups, setCategoryGroup, listGroupNames, listOwners, suggestHouseholdBudgets, createHouseholdBudgets } from '../db/household'
 
@@ -103,7 +104,8 @@ export function createHandlers(realPath: string = process.env.FINANCE_DB ?? defa
     recurringDelete: (profileId: number, id: number) => deleteRecurring(open(), profileId, id),
     /** Regular payments found in the transactions that are not tracked yet. Nothing is saved. */
     recurringSuggest: (profileId: number) => suggestRecurring(open(), profileId, today()),
-    recurringAdd: (profileId: number, items: { key: string; direction: 'income' | 'expense'; name?: string }[]) => addDetected(open(), profileId, items, today()),
+    recurringRefunded: (profileId: number) => refundedCharges(open(), profileId, today()),
+    recurringAdd: (profileId: number, items: { key: string; direction: 'income' | 'expense'; name?: string; keepRefunded?: boolean }[]) => addDetected(open(), profileId, items, today()),
     recurringDismiss: (profileId: number, key: string, direction: 'income' | 'expense') => dismissSuggestion(open(), profileId, key, direction),
     /** Tracked payments that stopped appearing: "was it cancelled?" */
     recurringStopped: (profileId: number) => stoppedItems(open(), profileId),
@@ -169,6 +171,8 @@ export function createHandlers(realPath: string = process.env.FINANCE_DB ?? defa
     importUndo: (profileId: number, batchId: number) => undoImport(open(), profileId, batchId),
 
     budgets: (profileId: number, month: string) => budgetReport(open(), profileId, month, today()),
+    budgetDrill: (profileId: number, budgetId: number, month: string) => budgetDrill(open(), profileId, budgetId, month),
+    householdBudgetDrill: (budgetId: number, month: string) => householdBudgetDrill(open(), budgetId, month),
     budgetCreate: (profileId: number, name: string, monthlyCents: number, categoryIds: number[]) => createBudget(open(), profileId, name, monthlyCents, categoryIds),
     /** Averages of the last three complete months, per category, for categories not in a budget yet. Nothing is saved. */
     budgetSuggest: (profileId: number) => suggestBudgets(open(), profileId, today()),

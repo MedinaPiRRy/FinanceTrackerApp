@@ -1,16 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
+import { BudgetDrill } from '../components/BudgetDrill'
+import { txnPreset } from '../txnLink'
 import { Card, Delta, ErrorBox, ProgressBar, StateBadge, Stat } from '../components/ui'
 import { formatCents, monthLabel, pct } from '../format'
 import type { MonthlyReview as Review } from '../../db/monthly'
 import type { Profile } from '../../db/queries'
-import type { Page } from '../App'
+import type { Page, TxnPreset } from '../App'
 
 const TYPE_LABEL = { fact: 'Fact', trend: 'Trend', anomaly: 'Unusual', recommendation: 'Worth a look' } as const
 
-export function MonthlyReview({ profile, goto }: { profile: Profile; goto: (p: Page) => void }) {
+export function MonthlyReview({ profile, goto }: { profile: Profile; goto: (p: Page, pre?: TxnPreset) => void }) {
   const [month, setMonth] = useState<string | undefined>()
+  const [drillId, setDrillId] = useState<number | null>(null)
   const [data, setData] = useState<Review | null | undefined>(undefined)
+  const drillLoad = useCallback(() => api('budgetDrill', profile.id, drillId!, (month ?? data?.month)!), [profile.id, drillId, month]) // eslint-disable-line react-hooks/exhaustive-deps
   const [error, setError] = useState<string | null>(null)
   useEffect(() => { api('monthlyReview', profile.id, month).then(setData).catch((e: Error) => setError(e.message)) }, [profile.id, month])
 
@@ -45,6 +49,7 @@ export function MonthlyReview({ profile, goto }: { profile: Profile; goto: (p: P
         <Stat label="Over budget" value={`${overBudgets.length} of ${data.budget.lines.length}`} tone={overBudgets.length ? 'neg' : undefined} />
       </div>
 
+      {drillId !== null && <BudgetDrill load={drillLoad} goto={goto} onClose={() => setDrillId(null)} />}
       <div className="grid two">
         <Card>
           <div className="card-head"><h2>Budget performance</h2><button className="btn small" onClick={() => goto('budget')}>Open budgets</button></div>
@@ -52,7 +57,7 @@ export function MonthlyReview({ profile, goto }: { profile: Profile; goto: (p: P
             <div className="table-wrap"><table><tbody>
               {data.budget.lines.map((l) => (
                 <tr key={l.id}>
-                  <td>{l.name}<ProgressBar value={l.ratio ?? (l.spentCents > 0 ? 1 : 0)} tone={l.state} label={`${l.name} budget used`} /></td>
+                  <td><button className="txn-link" title="See the transactions in this budget, by account" onClick={() => setDrillId(l.id)}>{l.name}</button><ProgressBar value={l.ratio ?? (l.spentCents > 0 ? 1 : 0)} tone={l.state} label={`${l.name} budget used`} /></td>
                   <td className="r num">{formatCents(l.spentCents)}<div className="muted" style={{ fontSize: 12 }}>of {formatCents(l.budgetCents)}</div></td>
                   <td><StateBadge state={l.state} /></td>
                 </tr>
@@ -80,7 +85,7 @@ export function MonthlyReview({ profile, goto }: { profile: Profile; goto: (p: P
         <Card>
           <div className="card-head"><h2>Biggest expenses</h2></div>
           <div className="table-wrap"><table><tbody>
-            {data.topExpenses.map((t) => <tr key={t.id}><td className="num">{t.date.slice(5)}</td><td>{t.description}<div className="muted" style={{ fontSize: 12 }}>{t.category ?? 'Uncategorized'}</div></td><td className="r num">{formatCents(t.cents)}</td></tr>)}
+            {data.topExpenses.map((t) => <tr key={t.id}><td className="num">{t.date.slice(5)}</td><td><button className="txn-link" title="Show this transaction in its account" onClick={() => goto('transactions', txnPreset(t))}>{t.description}</button><div className="muted" style={{ fontSize: 12 }}>{t.category ?? 'Uncategorized'}</div></td><td className="r num">{formatCents(t.cents)}</td></tr>)}
           </tbody></table></div>
         </Card>
         <Card>

@@ -4,9 +4,11 @@ import { rememberCategory } from './rules'
 import { monthlyCostCents, annualCostCents, type Frequency } from '../core/recurring'
 import { summarizeMonth, type MonthSummary } from '../core/summary'
 import { generateInsights, type Insight } from '../core/insights'
-import { addMonths, monthKey } from '../core/dates'
+import { addMonths, monthKey, toIso } from '../core/dates'
 import { groupOf } from '../core/groups'
 import { budgetReport } from './budgets'
+import { pairReversals, reversedIds } from '../core/offsets'
+import { refundedItemIds } from './recurringDetect'
 import { listGoals } from './goals'
 
 const localToday = () => new Date().toLocaleDateString('en-CA')
@@ -187,17 +189,21 @@ export interface RecurringRow {
   countsInBudget: boolean
   monthlyCents: number
   annualCents: number
+  /** The bank pays this charge back every time (a fee and its rebate), so it costs nothing and is left out of bills and forecasts. */
+  refunded: boolean
   lastCharged: string | null
   usualTiming: string | null
   notes: string | null
 }
 
-export function listRecurring(db: Db, profileId: number): RecurringRow[] {
+export function listRecurring(db: Db, profileId: number, today: string = toIso(new Date())): RecurringRow[] {
+  const refunded = refundedItemIds(db, profileId, today)
   const rows = db.prepare(`SELECT r.*, a.name AS account FROM recurring r LEFT JOIN account a ON a.id = r.account_id WHERE r.profile_id = ? ORDER BY r.direction DESC, r.status = 'cancelled', r.id`).all(profileId) as Record<string, unknown>[]
   return rows.map((r) => ({
     id: r.id as number, name: r.name as string, direction: r.direction as string, account: (r.account as string) ?? null, accountId: (r.account_id as number) ?? null, paidWith: (r.paid_with as string) ?? null,
     amountCents: r.amount_cents as number, frequency: r.frequency as Frequency, status: r.status as string, countsInBudget: !!r.counts_in_budget,
-    monthlyCents: monthlyCostCents(r.amount_cents as number, r.frequency as Frequency), annualCents: annualCostCents(r.amount_cents as number, r.frequency as Frequency),
+    monthlyCents: refunded.has(r.id as number) ? 0 : monthlyCostCents(r.amount_cents as number, r.frequency as Frequency), annualCents: refunded.has(r.id as number) ? 0 : annualCostCents(r.amount_cents as number, r.frequency as Frequency),
+    refunded: refunded.has(r.id as number),
     lastCharged: (r.last_charged as string) ?? null, usualTiming: (r.usual_timing as string) ?? null, notes: (r.notes as string) ?? null
   }))
 }
@@ -216,7 +222,7 @@ export interface Dashboard {
   lastYear: MonthSummary | null
   average: { months: number; incomeCents: number; expenseCents: number; netCents: number } | null
   series: MonthSummary[]
-  largestExpenses: { id: number; date: string; description: string; category: string | null; cents: number }[]
+  largestExpenses: { id: number; accountId: number; date: string; description: string; category: string | null; cents: number }[]
   assetsCents: number
   owedCardsCents: number
   otherDebtCents: number
@@ -228,9 +234,12 @@ export interface Dashboard {
 
 export function getDashboard(db: Db, profileId: number, requestedMonth?: string, today: string = localToday()): Dashboard | null {
   const rows = db
-    .prepare(`SELECT t.id, t.posted_date AS date, t.amount_cents AS amountCents, t.kind, c.name AS category, t.description FROM txn t LEFT JOIN category c ON c.id = t.category_id WHERE t.profile_id = ? AND t.kind IN ('income','expense','refund')`)
-    .all(profileId) as { id: number; date: string; amountCents: number; kind: 'income' | 'expense' | 'refund'; category: string | null; description: string }[]
+    .prepare(`SELECT t.id, t.account_id AS accountId, t.posted_date AS date, t.amount_cents AS amountCents, t.kind, c.name AS category, t.description FROM txn t LEFT JOIN category c ON c.id = t.category_id WHERE t.profile_id = ? AND t.kind IN ('income','expense','refund')`)
+    .all(profileId) as { id: number; accountId: number; date: string; amountCents: number; kind: 'income' | 'expense' | 'refund'; category: string | null; description: string }[]
   if (!rows.length) return null
+  // a charge the bank paid straight back (a fee and its rebate) is not a purchase worth pointing at
+  const reversed = reversedIds(pairReversals(rows))
+  const real = rows.filter((r) => !reversed.has(r.id))
   const months = [...new Set(rows.map((r) => monthKey(r.date)))].sort()
   const month = requestedMonth && months.includes(requestedMonth) ? requestedMonth : months[months.length - 1]!
   const series = months.map((m) => summarizeMonth(rows, m))
@@ -259,13 +268,13 @@ export function getDashboard(db: Db, profileId: number, requestedMonth?: string,
     lastYear: get(addMonths(month, -12)),
     average: prior.length ? { months: prior.length, incomeCents: Math.round(prior.reduce((a, s) => a + s.incomeCents, 0) / prior.length), expenseCents: Math.round(prior.reduce((a, s) => a + s.expenseCents, 0) / prior.length), netCents: Math.round(prior.reduce((a, s) => a + s.netCents, 0) / prior.length) } : null,
     series,
-    largestExpenses: rows.filter((r) => r.kind === 'expense' && monthKey(r.date) === month).sort((a, b) => a.amountCents - b.amountCents).slice(0, 6).map((r) => ({ id: r.id, date: r.date, description: r.description, category: r.category, cents: -r.amountCents })),
+    largestExpenses: real.filter((r) => r.kind === 'expense' && monthKey(r.date) === month).sort((a, b) => a.amountCents - b.amountCents).slice(0, 6).map((r) => ({ id: r.id, accountId: r.accountId, date: r.date, description: r.description, category: r.category, cents: -r.amountCents })),
     assetsCents: assets,
     owedCardsCents: owed,
     otherDebtCents: other,
     recurring: { monthlyCents: recMonthly, annualCents: recMonthly * 12, pctOfIncome: incomeBase > 0 ? recMonthly / incomeBase : null, count: rec.length },
     budget: br.lines.length ? { budgetCents: br.totals.budgetCents, spentCents: br.totals.spentCents, remainingCents: br.totals.remainingCents, overCount: br.lines.filter((l) => l.state === 'over').length, count: br.lines.length } : null,
-    insights: generateInsights({ cards: listAccounts(db, profileId).filter((a) => a.type === 'credit_card' && !a.archived && (a.creditLimitCents ?? 0) > 0).map((a) => ({ name: a.name, owedCents: Math.max(0, -(a.valueCents ?? 0)), limitCents: a.creditLimitCents! })), month, series, txns: rows.map((r) => ({ ...r })), recurringMonthlyCents: recMonthly, budgets: br.lines.map((l) => ({ name: l.name, budgetCents: l.budgetCents, spentCents: l.spentCents, projectedCents: l.projectedCents })), goals: goals.map((g) => ({ name: g.name, deadline: g.deadline, plannedMonthlyCents: g.plannedMonthlyCents, progress: g.progress })) }),
+    insights: generateInsights({ cards: listAccounts(db, profileId).filter((a) => a.type === 'credit_card' && !a.archived && (a.creditLimitCents ?? 0) > 0).map((a) => ({ name: a.name, owedCents: Math.max(0, -(a.valueCents ?? 0)), limitCents: a.creditLimitCents! })), month, series, txns: real.map((r) => ({ ...r })), recurringMonthlyCents: recMonthly, budgets: br.lines.map((l) => ({ name: l.name, budgetCents: l.budgetCents, spentCents: l.spentCents, projectedCents: l.projectedCents })), goals: goals.map((g) => ({ name: g.name, deadline: g.deadline, plannedMonthlyCents: g.plannedMonthlyCents, progress: g.progress })) }),
     reviewCount: (db.prepare('SELECT COUNT(*) n FROM txn WHERE profile_id = ? AND review_reason IS NOT NULL').get(profileId) as { n: number }).n
   }
 }

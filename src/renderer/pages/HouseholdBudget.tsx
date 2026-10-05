@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
+import { BudgetDrill } from '../components/BudgetDrill'
+import type { Page, TxnPreset } from '../App'
 import { Card, ErrorBox, ProgressBar, StateBadge } from '../components/ui'
 import { formatCents, monthLabel, today } from '../format'
 import { SuggestBudgets } from '../components/SuggestBudgets'
@@ -46,11 +48,13 @@ function GroupEditor({ onChanged }: { onChanged: () => void }) {
   )
 }
 
-export function HouseholdBudget({ onChanged }: { onChanged: () => void }) {
+export function HouseholdBudget({ onChanged, goto }: { onChanged: () => void; goto: (p: Page, pre?: TxnPreset) => void }) {
   const [month, setMonth] = useState<string | undefined>()
   const [months, setMonths] = useState<string[]>([])
   const thisMonth = today().slice(0, 7)
   const [report, setReport] = useState<HouseholdBudgetReport | null>(null)
+  const [drillId, setDrillId] = useState<number | null>(null)
+  const drillLoad = useCallback(() => api('householdBudgetDrill', drillId!, month!), [drillId, month])
   const [groups, setGroups] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<number | 'new' | null>(null)
@@ -134,6 +138,7 @@ export function HouseholdBudget({ onChanged }: { onChanged: () => void }) {
         <Card className="stat"><div className="label">Over budget</div><div className={`value num ${over ? 'neg' : ''}`}>{over} of {report.lines.length}</div></Card>
       </div>
 
+      {drillId !== null && <BudgetDrill load={drillLoad} goto={goto} onClose={() => setDrillId(null)} />}
       <Card>
         {report.lines.length === 0 ? <p className="muted">No household budgets yet. Add one to track a category group for both of you together.</p> : (
           <div className="table-wrap"><table>
@@ -142,7 +147,7 @@ export function HouseholdBudget({ onChanged }: { onChanged: () => void }) {
             <tbody>
               {report.lines.map((l) => (
                 <tr key={l.id}>
-                  <td>{l.name}<div className="muted" style={{ fontSize: 12 }}>{l.groups.join(' · ') || 'No groups yet'}</div></td>
+                  <td><button className="txn-link" title="See the transactions in this budget, by account" onClick={() => setDrillId(l.id)}>{l.name}</button><div className="muted" style={{ fontSize: 12 }}>{l.groups.join(' · ') || 'No groups yet'}</div></td>
                   <td className="r num">{formatCents(l.budgetCents)}</td>
                   <td className="r num">{formatCents(l.spentCents)}<div className="muted" style={{ fontSize: 12 }}>{l.perOwner.map((o) => `${o.name} ${formatCents(o.cents)}`).join(' · ')}</div></td>
                   <td className={`r num ${l.remainingCents < 0 ? 'neg' : ''}`}>{l.remainingCents < 0 ? '-' : ''}{formatCents(Math.abs(l.remainingCents))}</td>

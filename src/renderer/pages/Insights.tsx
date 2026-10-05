@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
+import { txnPreset } from '../txnLink'
 import { Card, ErrorBox } from '../components/ui'
 import { formatCents, monthLabel } from '../format'
 import type { Insight } from '../../core/insights'
@@ -40,7 +41,8 @@ export function Insights({ profile, categories, goto, openId }: { profile: Profi
     const r = i.ref!
     if (r.page === 'transactions') {
       const categoryId = r.category ? categories.find((c) => c.name === r.category && c.kind === 'expense')?.id : undefined
-      goto('transactions', { categoryId, text: r.text, from: r.month ? `${r.month}-01` : undefined, to: r.month ? `${r.month}-31` : undefined })
+      if (r.txnId !== undefined && r.accountId !== undefined && r.date) goto('transactions', txnPreset({ id: r.txnId, accountId: r.accountId, date: r.date }))
+      else goto('transactions', { categoryId, text: r.text, from: r.month ? `${r.month}-01` : undefined, to: r.month ? `${r.month}-31` : undefined })
     } else goto(r.page as Page)
   }
 
@@ -76,7 +78,7 @@ export function Insights({ profile, categories, goto, openId }: { profile: Profi
                       <div>
                         <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>The numbers behind it ({ev.total} transaction{ev.total === 1 ? '' : 's'}, {formatCents(ev.sumCents, { sign: true })} net{ev.rows.length < ev.total ? `, largest ${ev.rows.length} shown` : ''})</div>
                         <div className="table-wrap"><table><tbody>
-                          {ev.rows.map((r) => <tr key={r.id}><td className="num">{r.date}</td><td>{r.description}<div className="muted">{r.category ?? r.account}</div></td><td className="r num">{formatCents(r.amountCents, { sign: true })}</td></tr>)}
+                          {ev.rows.map((r) => <tr key={r.id}><td className="num">{r.date}</td><td><button className="txn-link" title="Show this transaction in its account" onClick={() => goto('transactions', txnPreset(r))}>{r.description}</button><div className="muted">{r.category ?? r.account}</div></td><td className="r num">{formatCents(r.amountCents, { sign: true })}</td></tr>)}
                         </tbody></table></div>
                       </div>
                     )}

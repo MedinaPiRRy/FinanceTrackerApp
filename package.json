@@ -1,0 +1,116 @@
+{
+  "name": "financetracker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Private, offline personal and household finance tracker (desktop, local SQLite)",
+  "author": "Daniel Medina Lopez (@MedinaPiRRy on Github)",
+  "license": "MIT",
+  "homepage": "https://github.com/MedinaPiRRy/FinanceTrackerApp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MedinaPiRRy/FinanceTrackerApp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MedinaPiRRy/FinanceTrackerApp/issues"
+  },
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "dev:api": "tsx scripts/dev-api.ts",
+    "dev:web": "vite --config vite.web.config.ts",
+    "dist:win": "electron-vite build && electron-builder --win nsis && tsx scripts/build-wipe-tool.ts",
+    "dist:mac": "electron-vite build && electron-builder --mac dmg",
+    "dist:linux": "electron-vite build && electron-builder --linux AppImage",
+    "pack": "electron-vite build && electron-builder --dir",
+    "start": "electron-vite build && electron ."
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "fast-xml-parser": "^5.11.2",
+    "fflate": "^0.8.3",
+    "papaparse": "^5.7.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.4",
+    "@types/papaparse": "^5.5.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6",
+    "vitest": "^5.0.3",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "echarts": "^6.1.0"
+  },
+  "build": {
+    "appId": "app.financetracker.desktop",
+    "productName": "FinanceTracker",
+    "copyright": "MIT licensed. Local, offline personal finance app.",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json",
+      "!node_modules/better-sqlite3/{deps,src}/**",
+      "!node_modules/**/*.{md,markdown,map,ts}"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/build/Release/*.node"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "FinanceTracker-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FinanceTracker",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "include": "build/installer.nsh"
+    },
+    "mac": {
+      "category": "public.app-category.finance",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "FinanceTracker-${version}-${arch}.${ext}",
+      "identity": null
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office",
+      "artifactName": "FinanceTracker-${version}.${ext}"
+    }
+  }
+}

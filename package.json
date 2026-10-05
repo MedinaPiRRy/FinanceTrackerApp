@@ -21,9 +21,9 @@
     "test": "vitest run",
     "dev:api": "tsx scripts/dev-api.ts",
     "dev:web": "vite --config vite.web.config.ts",
-    "dist:win": "electron-vite build && electron-builder --win nsis && tsx scripts/build-wipe-tool.ts",
-    "dist:mac": "electron-vite build && electron-builder --mac dmg",
-    "dist:linux": "electron-vite build && electron-builder --linux AppImage",
+    "dist:win": "electron-vite build && electron-builder --publish never --win nsis && tsx scripts/build-wipe-tool.ts",
+    "dist:mac": "electron-vite build && electron-builder --publish never --mac dmg",
+    "dist:linux": "electron-vite build && electron-builder --publish never --linux AppImage",
     "pack": "electron-vite build && electron-builder --dir",
     "start": "electron-vite build && electron ."
   },

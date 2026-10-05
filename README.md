@@ -20,8 +20,14 @@ The app fills itself with a made-up person or couple and about six months of tra
 to look at. Sample data is stored in its own file and **never mixes with real data**. One click removes it.
 
 > The installers are not code-signed. Windows SmartScreen will say "Windows protected your PC": choose
-> **More info → Run anyway**. On macOS, right-click the app and choose **Open** the first time.
-> macOS and Linux builds are produced by the automated release workflow and are not tested by the author.
+> **More info → Run anyway**.
+>
+> **Mac:** there are two files. Use `-arm64.dmg` on Apple Silicon (M1 or newer) and `-x64.dmg` on an Intel Mac
+> (Apple menu → About This Mac shows which you have). Because the app is not signed by Apple, macOS blocks it the first time:
+> open **System Settings → Privacy & Security** and press **Open Anyway**, or right-click the app and choose **Open**.
+> If macOS says the app is "damaged", run `xattr -cr /Applications/FinanceTracker.app` in Terminal and open it again.
+>
+> The Mac and Linux builds are produced by the automated release workflow and have not been tested by the author.
 
 ## Using your own data
 

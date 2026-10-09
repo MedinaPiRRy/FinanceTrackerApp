@@ -20,26 +20,34 @@ interface Props {
   build: (c: ChartColors) => EChartsCoreOption
   height?: number
   label: string
-  onClick?: (name: string) => void
+  /** `name` is the category (month, bar label); `p` says which series and which point. */
+  onClick?: (name: string, p: { seriesName: string; dataIndex: number }) => void
 }
 
 /** ECharts wrapper. Rebuilt when the theme changes so colours always come from the active tokens. */
 export function Chart({ build, height = 280, label, onClick }: Props) {
   const el = useRef<HTMLDivElement>(null)
   const { resolved } = useTheme()
+  // the latest handler, so a new function on every render does not rebuild the chart
+  const clickRef = useRef(onClick)
+  clickRef.current = onClick
+  const clickable = !!onClick
 
   useEffect(() => {
     if (!el.current) return
     const chart = echarts.init(el.current, undefined, { renderer: 'canvas' })
     chart.setOption(build(readColors()))
-    if (onClick) chart.on('click', (p) => onClick(String(p.name)))
+    if (clickable) {
+      chart.on('click', (p) => clickRef.current?.(String(p.name), { seriesName: String(p.seriesName ?? ''), dataIndex: p.dataIndex ?? 0 }))
+      chart.getZr().on('mousemove', (e) => { chart.getZr().setCursorStyle(e.target ? 'pointer' : 'default') })
+    }
     const ro = new ResizeObserver(() => chart.resize())
     ro.observe(el.current)
     return () => {
       ro.disconnect()
       chart.dispose()
     }
-  }, [build, resolved, onClick])
+  }, [build, resolved, clickable])
 
   return <div ref={el} className="chart" style={{ height }} role="img" aria-label={label} />
 }

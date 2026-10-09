@@ -12,7 +12,7 @@ describe('diagnostics and backup', () => {
     const dir = tmp()
     const h = createHandlers(path.join(dir, 'finance.db'))
     const d = h.diagnostics()
-    expect(d).toMatchObject({ schemaVersion: 1, transactions: 0, platform: process.platform })
+    expect(d).toMatchObject({ schemaVersion: 2, transactions: 0, platform: process.platform })
     expect(d.dbPath).toBe(path.join(dir, 'finance.db'))
     expect(d.backupDir).toBe(path.join(dir, 'backups'))
     expect(Object.keys(d)).not.toContain('balance')
@@ -35,7 +35,7 @@ describe('diagnostics and backup', () => {
     expect(path.dirname(r.file)).toBe(path.join(dir, 'backups'))
     const copy = new Database(r.file, { readonly: true })
     expect((copy.prepare('SELECT COUNT(*) n FROM txn').get() as { n: number }).n).toBe(50)
-    expect(copy.pragma('user_version', { simple: true })).toBe(1)
+    expect(copy.pragma('user_version', { simple: true })).toBe(2)
     expect(copy.pragma('integrity_check', { simple: true })).toBe('ok')
     copy.close()
     expect(h.diagnostics().transactions).toBe(50) // original untouched

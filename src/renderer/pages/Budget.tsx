@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
+import { monthEnd } from '../../core/budgets'
+import { useKept } from '../nav'
 import { api } from '../api'
+import { ReviewNotice } from '../components/ReviewNotice'
 import { BudgetDrill } from '../components/BudgetDrill'
 import { Card, ErrorBox, ProgressBar, StateBadge } from '../components/ui'
 import { formatCents, monthLabel, today } from '../format'
@@ -27,8 +30,8 @@ function CategoryPicker({ categories, selected, takenBy, onChange }: { categorie
   )
 }
 
-export function Budget({ profile, categories, goto, onChanged }: { profile: Profile; categories: CategoryInfo[]; goto: (p: Page, preset?: TxnPreset) => void; onChanged: () => void }) {
-  const [month, setMonth] = useState<string | undefined>()
+export function Budget({ profile, categories, goto, onChanged, preset }: { preset?: TxnPreset; profile: Profile; categories: CategoryInfo[]; goto: (p: Page, preset?: TxnPreset) => void; onChanged: () => void }) {
+  const [month, setMonth] = useKept<string | undefined>('month', preset?.month)
   const [months, setMonths] = useState<string[]>([])
   const thisMonth = today().slice(0, 7) // a profile with no transactions yet still gets a page, for the current month
   const [report, setReport] = useState<BudgetReport | null>(null)
@@ -39,7 +42,7 @@ export function Budget({ profile, categories, goto, onChanged }: { profile: Prof
   const [picked, setPicked] = useState<number[]>([])
 
   useEffect(() => { void api('dashboard', profile.id).then((d) => { if (d) { setMonths(d.availableMonths); setMonth((m) => m ?? d.month) } else { setMonths([thisMonth]); setMonth((m) => m ?? thisMonth) } }) }, [profile.id])
-  const [drillId, setDrillId] = useState<number | null>(null)
+  const [drillId, setDrillId] = useKept<number | null>('drillId', null)
   const drillLoad = useCallback(() => api('budgetDrill', profile.id, drillId!, month!), [profile.id, drillId, month])
   const load = useCallback(() => { if (month) void api('budgets', profile.id, month).then(setReport).catch((e: Error) => setError(e.message)) }, [profile.id, month])
   useEffect(load, [load])
@@ -61,7 +64,7 @@ export function Budget({ profile, categories, goto, onChanged }: { profile: Prof
   const t = report.totals
   const over = report.lines.filter((l) => l.state === 'over').length
   const catId = (n: string) => categories.find((c) => c.kind === 'expense' && c.name === n)?.id
-  const range = { from: `${month}-01`, to: `${month}-31` }
+  const range = { from: `${month}-01`, to: monthEnd(month) }
 
   const editor = (
     <Card>
@@ -105,6 +108,7 @@ export function Budget({ profile, categories, goto, onChanged }: { profile: Prof
         <Card className="stat"><div className="label">Over budget</div><div className={`value num ${over ? 'neg' : ''}`}>{over} of {report.lines.length}</div></Card>
       </div>
 
+      <ReviewNotice profileId={profile.id} goto={goto} />
       {drillId !== null && <BudgetDrill load={drillLoad} goto={goto} onClose={() => setDrillId(null)} />}
       <Card>
         {report.lines.length === 0 ? <p className="muted">No budgets yet. Add one to start tracking a category.</p> : (

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { Card, ErrorBox, Segmented } from '../components/ui'
+import { Pager } from '../components/Pager'
 import { formatCents, KIND_LABEL } from '../format'
 import type { AccountInfo, CategoryInfo, Profile } from '../../db/queries'
 import type { Preview, PreviewRow, BatchInfo, CommitResult, CommitRow } from '../../db/import'
@@ -8,6 +9,7 @@ import type { ImportMeta, AccountSuggestion } from '../../db/importMatch'
 import type { ColumnMap } from '../../core/statement'
 import type { Page } from '../App'
 
+const IMPORT_PAGE = 100
 type View = 'all' | 'new' | 'duplicate' | 'repeat' | 'attention'
 type Kind = PreviewRow['kind']
 
@@ -95,6 +97,10 @@ export function Import({ profile, accounts, categories, onChanged, goto, partner
   const setCategory = (r: PreviewRow, id: string) => update(r.idx, { categoryId: id ? Number(id) : null, reviewReason: id ? null : 'Needs a category' })
 
   const visible = useMemo(() => rows.filter((r) => view === 'all' || (view === 'new' && r.status === 'new') || (view === 'duplicate' && r.status === 'duplicate') || (view === 'repeat' && r.status === 'repeat') || (view === 'attention' && r.include && r.reviewReason)), [rows, view])
+  // a statement can have thousands of lines: show them 100 at a time
+  const [pg, setPg] = useState(0)
+  useEffect(() => setPg(0), [view, rows.length])
+  const shown = useMemo(() => visible.slice(pg * IMPORT_PAGE, (pg + 1) * IMPORT_PAGE), [visible, pg])
   const counts = useMemo(() => ({ include: rows.filter((r) => r.include).length, dup: rows.filter((r) => r.status === 'duplicate').length, repeat: rows.filter((r) => r.status === 'repeat').length, near: rows.filter((r) => r.status === 'new' && r.nearMatch).length, attention: rows.filter((r) => r.include && r.reviewReason).length }), [rows])
 
   const commit = async () => {
@@ -233,12 +239,13 @@ export function Import({ profile, accounts, categories, onChanged, goto, partner
                 <button className="btn" disabled={!newCat.trim()} onClick={() => void addCategory()}>Add</button>
               </div>
             </div>
+            <Pager page={pg} total={visible.length} pageSize={IMPORT_PAGE} onPage={setPg} noun="Lines" />
             <div className="table-wrap">
               <table>
                 <caption className="sr-only">Preview of the statement</caption>
                 <thead><tr><th>Import</th><th>Date</th><th>Name</th><th>Type</th><th>Category</th><th className="r">Amount</th><th>Status</th></tr></thead>
                 <tbody>
-                  {visible.map((r) => {
+                  {shown.map((r) => {
                     const cats = r.kind === 'income' ? incomeCats : expenseCats
                     const catEditable = r.kind === 'income' || r.kind === 'expense' || r.kind === 'refund'
                     return (
@@ -283,6 +290,7 @@ export function Import({ profile, accounts, categories, onChanged, goto, partner
               </table>
               {visible.length === 0 && <p className="muted" style={{ padding: 12 }}>No rows in this view.</p>}
             </div>
+            <Pager page={pg} total={visible.length} pageSize={IMPORT_PAGE} onPage={setPg} noun="Lines" />
             <div className="filters" style={{ justifyContent: 'space-between', marginTop: 14, marginBottom: 0 }}>
               <div>
                 {counts.dup > 0 && (

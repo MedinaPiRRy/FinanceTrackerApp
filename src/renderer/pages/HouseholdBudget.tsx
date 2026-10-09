@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useKept } from '../nav'
 import { api } from '../api'
+import { ReviewNotice } from '../components/ReviewNotice'
 import { BudgetDrill } from '../components/BudgetDrill'
 import type { Page, TxnPreset } from '../App'
 import { Card, ErrorBox, ProgressBar, StateBadge } from '../components/ui'
@@ -48,12 +50,12 @@ function GroupEditor({ onChanged }: { onChanged: () => void }) {
   )
 }
 
-export function HouseholdBudget({ onChanged, goto }: { onChanged: () => void; goto: (p: Page, pre?: TxnPreset) => void }) {
-  const [month, setMonth] = useState<string | undefined>()
+export function HouseholdBudget({ onChanged, goto, preset }: { preset?: TxnPreset; onChanged: () => void; goto: (p: Page, pre?: TxnPreset) => void }) {
+  const [month, setMonth] = useKept<string | undefined>('month', preset?.month)
   const [months, setMonths] = useState<string[]>([])
   const thisMonth = today().slice(0, 7)
   const [report, setReport] = useState<HouseholdBudgetReport | null>(null)
-  const [drillId, setDrillId] = useState<number | null>(null)
+  const [drillId, setDrillId] = useKept<number | null>('drillId', null)
   const drillLoad = useCallback(() => api('householdBudgetDrill', drillId!, month!), [drillId, month])
   const [groups, setGroups] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -138,6 +140,7 @@ export function HouseholdBudget({ onChanged, goto }: { onChanged: () => void; go
         <Card className="stat"><div className="label">Over budget</div><div className={`value num ${over ? 'neg' : ''}`}>{over} of {report.lines.length}</div></Card>
       </div>
 
+      <ReviewNotice profileId={null} goto={goto} />
       {drillId !== null && <BudgetDrill load={drillLoad} goto={goto} onClose={() => setDrillId(null)} />}
       <Card>
         {report.lines.length === 0 ? <p className="muted">No household budgets yet. Add one to track a category group for both of you together.</p> : (

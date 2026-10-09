@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { monthEnd } from '../../core/budgets'
+import { useKept } from '../nav'
 import { api } from '../api'
+import { ReviewNotice } from '../components/ReviewNotice'
 import { txnPreset } from '../txnLink'
 import { Chart, type ChartColors } from '../components/Chart'
 import { Card, ChartCard, Delta, ErrorBox, Segmented, Stat } from '../components/ui'
@@ -13,8 +16,8 @@ const dollars = (cents: number) => (Math.abs(cents) >= 100000 ? `${(cents / 1000
 const TYPE_LABEL = { fact: 'Fact', trend: 'Trend', anomaly: 'Unusual', recommendation: 'Worth a look' } as const
 
 export function Dashboard({ profile, categories, goto }: { profile: Profile; categories: CategoryInfo[]; goto: (p: Page, preset?: TxnPreset) => void }) {
-  const [month, setMonth] = useState<string | undefined>()
-  const [period, setPeriod] = useState<Period>('6')
+  const [month, setMonth] = useKept<string | undefined>('month', undefined)
+  const [period, setPeriod] = useKept<Period>('period', '6')
   const [data, setData] = useState<DashboardData | null | undefined>(undefined)
   const [recurring, setRecurring] = useState<RecurringRow[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -97,7 +100,9 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
 
   const s = data.summary
   const catId = (name: string) => categories.find((c) => c.kind === 'expense' && c.name === name)?.id
-  const monthRange = { from: `${data.month}-01`, to: `${data.month}-31` }
+  const monthRange = { from: `${data.month}-01`, to: monthEnd(data.month) }
+  /** Open the Transactions page on this month, showing only one kind of money. */
+  const go = (kind: string, month = data.month) => goto('transactions', { kind, from: `${month}-01`, to: monthEnd(month) })
   const comparisons: { label: string; sum: typeof s | null; avg?: boolean }[] = [
     { label: 'Previous month', sum: data.previous },
     { label: 'Same month last year', sum: data.lastYear }
@@ -120,6 +125,7 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
         </label>
       </div>
 
+      <ReviewNotice profileId={profile.id} goto={goto} />
       {data.reviewCount > 0 && (
         <div className="banner">
           <span>{data.reviewCount} transaction{data.reviewCount === 1 ? '' : 's'} need your review. Until then they are not counted as income or spending.</span>
@@ -128,13 +134,13 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
       )}
 
       <div className="grid stats">
-        <Stat label="Income" value={formatCents(s.incomeCents)} hint="Recorded income this month" />
-        <Stat label="Spending" value={formatCents(s.expenseCents)} hint="After refunds, excluding transfers" />
-        <Stat label="Net" value={formatCents(s.netCents, { sign: true })} tone={s.netCents < 0 ? 'neg' : 'pos'} hint={`Savings rate ${pct(s.savingsRate)}`} />
-        <Stat label="Accounts" value={formatCents(data.assetsCents)} hint={`Owed: ${formatCents(data.owedCardsCents)} on cards${data.otherDebtCents ? ` + ${formatCents(data.otherDebtCents)} loans` : ''}`} />
+        <Stat label="Income" value={formatCents(s.incomeCents)} hint="Recorded income this month" onClick={() => go('income')} title="See the money that came in this month" />
+        <Stat label="Spending" value={formatCents(s.expenseCents)} hint="After refunds, excluding transfers" onClick={() => go('expense,refund')} title="See the money that went out this month" />
+        <Stat label="Net" value={formatCents(s.netCents, { sign: true })} tone={s.netCents < 0 ? 'neg' : 'pos'} hint={`Savings rate ${pct(s.savingsRate)}`} onClick={() => go('income,expense,refund')} title="See all the income and spending this month" />
+        <Stat label="Accounts" value={formatCents(data.assetsCents)} hint={`Owed: ${formatCents(data.owedCardsCents)} on cards${data.otherDebtCents ? ` + ${formatCents(data.otherDebtCents)} loans` : ''}`} onClick={() => goto('accounts')} title="Open your accounts" />
         {!data.budget && <Stat label="Budget" value="Not set" hint={<button className="btn small" onClick={() => goto('budget')}>Add a budget</button>} />}
-        {data.budget && <Stat label="Budget left" value={formatCents(data.budget.remainingCents)} tone={data.budget.remainingCents < 0 ? 'neg' : undefined} hint={`${formatCents(data.budget.spentCents)} of ${formatCents(data.budget.budgetCents)}${data.budget.overCount ? ` · ${data.budget.overCount} over` : ''}`} />}
-        <Stat label="Recurring bills" value={`${formatCents(data.recurring.monthlyCents)}/mo`} hint={`${formatCents(data.recurring.annualCents)}/yr · ${pct(data.recurring.pctOfIncome)} of avg income`} />
+        {data.budget && <Stat label="Budget left" value={formatCents(data.budget.remainingCents)} tone={data.budget.remainingCents < 0 ? 'neg' : undefined} hint={`${formatCents(data.budget.spentCents)} of ${formatCents(data.budget.budgetCents)}${data.budget.overCount ? ` · ${data.budget.overCount} over` : ''}`} onClick={() => goto('budget', { month: data.month })} title="Open this month's budgets" />}
+        <Stat label="Recurring bills" value={`${formatCents(data.recurring.monthlyCents)}/mo`} hint={`${formatCents(data.recurring.annualCents)}/yr · ${pct(data.recurring.pctOfIncome)} of avg income`} onClick={() => goto('recurring')} title="Open recurring bills" />
       </div>
 
       <Card className="compare" >
@@ -147,7 +153,7 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
             <tbody>
               {([['Income', s.incomeCents, 'incomeCents', 'up'], ['Spending', s.expenseCents, 'expenseCents', 'down'], ['Net', s.netCents, 'netCents', 'up']] as const).map(([label, now, key, good]) => (
                 <tr key={label}>
-                  <td>{label}</td>
+                  <td><button className="txn-link" title="See these transactions" onClick={() => go(label === 'Income' ? 'income' : label === 'Spending' ? 'expense,refund' : 'income,expense,refund')}>{label}</button></td>
                   <td className="r num"><b>{formatCents(now)}</b></td>
                   {comparisons.map((c) => (
                     <td key={c.label} className="r num">{c.sum ? <>{formatCents(c.sum[key])}<br /><Delta now={now} then={c.sum[key]} goodWhen={good} /></> : <span className="muted">no data</span>}</td>
@@ -170,11 +176,11 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
       <div className="grid two">
         <ChartCard
           title="Income vs spending"
-          subtitle="Hover a month for the exact figures"
+          subtitle="Hover a month for the figures, click a bar to see its transactions"
           controls={<Segmented small label="Time period" value={period} onChange={setPeriod} options={[{ value: '3', label: '3M' }, { value: '6', label: '6M' }, { value: '12', label: '12M' }, { value: 'ytd', label: 'YTD' }, { value: 'all', label: 'All' }]} />}
           table={{ headers: ['Month', 'Income', 'Spending', 'Net'], rows: series.map((m) => [monthLabel(m.month), formatCents(m.incomeCents), formatCents(m.expenseCents), formatCents(m.netCents, { sign: true })]) }}
         >
-          <Chart build={barOption} label="Bar chart of monthly income and spending" />
+          <Chart build={barOption} label="Bar chart of monthly income and spending" onClick={(_n, p) => { const m = series[p.dataIndex]?.month; if (m) go(p.seriesName === 'Income' ? 'income' : 'expense,refund', m) }} />
         </ChartCard>
         <ChartCard
           title={`Where the money went · ${monthLabel(data.month)}`}
@@ -186,8 +192,8 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
       </div>
 
       <div className="grid two">
-        <ChartCard title="Cumulative net" subtitle="Running total of recorded income minus spending over the period" table={{ headers: ['Month', 'Net', 'Cumulative'], rows: series.map((m, i) => [monthLabel(m.month), formatCents(m.netCents, { sign: true }), formatCents(cumulative[i]!)]) }}>
-          <Chart build={lineOption} label="Line chart of cumulative net" />
+        <ChartCard title="Cumulative net" subtitle="Running total of income minus spending. Click a point to see that month's transactions" table={{ headers: ['Month', 'Net', 'Cumulative'], rows: series.map((m, i) => [monthLabel(m.month), formatCents(m.netCents, { sign: true }), formatCents(cumulative[i]!)]) }}>
+          <Chart build={lineOption} label="Line chart of cumulative net" onClick={(_n, p) => { const m = series[p.dataIndex]?.month; if (m) go('income,expense,refund', m) }} />
         </ChartCard>
         <Card>
           <div className="card-head"><h2>Insights</h2><button className="btn small" onClick={() => goto('insights')}>See all and what they mean</button></div>
@@ -196,7 +202,7 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
               {data.insights.map((i, idx) => (
                 <div className="insight" key={idx}>
                   <span className={`badge ${i.tone === 'warn' ? 'warn' : i.tone === 'good' ? 'good' : ''}`}>{TYPE_LABEL[i.type]}</span>
-                  <div><strong>{i.title}</strong>{i.detail && <p>{i.detail}</p>}</div>
+                  <div><button className="txn-link" title="Open this insight and see what is behind it" onClick={() => goto('insights', { insightId: i.id })}><strong>{i.title}</strong></button>{i.detail && <p>{i.detail}</p>}</div>
                 </div>
               ))}
             </div>
@@ -206,7 +212,7 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
 
       <div className="grid two">
         <Card>
-          <div className="card-head"><h2>Largest expenses</h2></div>
+          <div className="card-head"><h2>Largest expenses</h2><button className="btn small" onClick={() => go('expense')}>See all spending</button></div>
           <div className="table-wrap"><table><tbody>
             {data.largestExpenses.map((t) => (
               <tr key={t.id}><td>{t.date.slice(5)}</td><td><button className="txn-link" title="Show this transaction in its account" onClick={() => goto('transactions', txnPreset(t))}>{t.description}</button><div className="muted">{t.category ?? 'Uncategorized'}</div></td><td className="r num">{formatCents(t.cents)}</td></tr>
@@ -217,7 +223,7 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
           <div className="card-head"><h2>Biggest recurring bills</h2><button className="btn small" onClick={() => goto('recurring')}>See all</button></div>
           {topRecurring.length === 0 ? <p className="muted">No recurring bills recorded.</p> : (
             <div className="table-wrap"><table><tbody>
-              {topRecurring.map((r) => <tr key={r.id}><td>{r.name}<div className="muted">{r.account ?? r.paidWith ?? ''}</div></td><td className="r num">{formatCents(r.monthlyCents)}/mo</td></tr>)}
+              {topRecurring.map((r) => <tr key={r.id}><td><button className="txn-link" title="Open recurring bills" onClick={() => goto('recurring')}>{r.name}</button><div className="muted">{r.account ?? r.paidWith ?? ''}</div></td><td className="r num">{formatCents(r.monthlyCents)}/mo</td></tr>)}
             </tbody></table></div>
           )}
         </Card>

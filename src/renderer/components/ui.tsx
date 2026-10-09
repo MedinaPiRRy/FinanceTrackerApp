@@ -1,14 +1,15 @@
 import { useState, type ReactNode } from 'react'
 import { formatCents } from '../format'
 
-export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <section className={`card ${className}`}>{children}</section>
+export function Card({ children, className = '', onClick }: { children: ReactNode; className?: string; onClick?: () => void }) {
+  return <section className={`card ${className}${onClick ? ' clickable' : ''}`} onClick={onClick}>{children}</section>
 }
 
-export function Stat({ label, value, hint, tone }: { label: string; value: ReactNode; hint?: ReactNode; tone?: 'pos' | 'neg' }) {
+/** A figure. With `onClick` the whole card is clickable (the label is the keyboard-focusable button; do not combine with buttons inside `hint`). */
+export function Stat({ label, value, hint, tone, onClick, title }: { label: string; value: ReactNode; hint?: ReactNode; tone?: 'pos' | 'neg'; onClick?: () => void; title?: string }) {
   return (
-    <Card className="stat">
-      <div className="label">{label}</div>
+    <Card className="stat" onClick={onClick}>
+      <div className="label">{onClick ? <button className="stat-link" title={title}>{label} →</button> : label}</div>
       <div className={`value num ${tone ?? ''}`}>{value}</div>
       {hint && <div className="hint">{hint}</div>}
     </Card>

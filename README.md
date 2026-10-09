@@ -39,7 +39,7 @@ downloaded from your bank (CSV or Excel). The importer:
 - **never records the same transaction twice**, even if the same file (or an overlapping one) is imported again, renamed, or pointed at the wrong account (the app recognises the file itself and asks you to confirm);
 - recognises common layouts automatically (any file with Date, Description and Amount or Debit/Credit columns, plus CIBC's headerless exports), and for anything else asks you once which column is the date,
   description and amount, then remembers that for the account;
-- keeps anything ambiguous, especially e-transfers, in a **review queue** so you decide what it means
+- keeps anything ambiguous, especially e-transfers, in a **review queue** so you decide what it means. The queue has tabs (possible income, money in, money out, transfers, and an Older tab for anything waiting more than 90 days, which is not pushed at you but flagged with a small notice on the statistics pages), groups transactions by source and is paginated, so one decision can clear many. Tick "Always do this for…" and that source is filed the same way from then on (undo in Settings);
   (income, a reimbursement, a gift, money between the two of you...) instead of the app guessing;
 - learns from your decisions: the next import categorizes that merchant automatically.
 
@@ -108,7 +108,12 @@ and attach them to a release.
 | Linux | `~/.config/FinanceTracker` |
 
 `finance.db` is your data, `sample.db` exists only while sample data is open, and `backups/` holds copies made by
-**Settings → Back up my data now**.
+**Settings → Back up my data now** (or automatically each day, if you turn that on).
+
+**Settings** also lets you rename people, choose the page the app opens on, add, rename and delete categories (and pick each
+spending category's budget), add, edit and delete accounts, move between *just me*, *me and my partner* and *plus a shared
+household*, export every transaction to CSV, and erase all your data or delete the app and its data (you type a word to confirm,
+and can keep one backup copy).
 
 ## Starting from zero
 

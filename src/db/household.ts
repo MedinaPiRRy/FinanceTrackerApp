@@ -8,6 +8,8 @@ import { listAccounts, type AccountInfo } from './queries'
 import { listGoals, type GoalView } from './goals'
 import { formatCents } from '../core/money'
 import { monthLabel } from '../core/insights'
+import { recentFrom } from '../core/reviewTabs'
+import { olderAfterDays } from './appSettings'
 
 export interface Owner { profileId: number; name: string; kind: 'person' | 'household' }
 
@@ -71,7 +73,7 @@ export interface HouseholdOverview {
   facts: string[]
 }
 
-export function getHouseholdOverview(db: Db, requestedMonth: string | undefined): HouseholdOverview | null {
+export function getHouseholdOverview(db: Db, requestedMonth: string | undefined, today: string = new Date().toLocaleDateString('en-CA')): HouseholdOverview | null {
   const owners = listOwners(db)
   const rows = loadRows(db)
   if (!rows.length) return null
@@ -140,7 +142,7 @@ export function getHouseholdOverview(db: Db, requestedMonth: string | undefined)
     combined: { incomeCents, expenseCents, netCents: incomeCents - expenseCents, savingsRate: incomeCents > 0 ? (incomeCents - expenseCents) / incomeCents : null },
     perOwner, series, groups, movement: { betweenUs, sharedAccounts },
     money: { assetsCents: moneyPer.reduce((s, o) => s + o.assetsCents, 0), owedCardsCents: moneyPer.reduce((s, o) => s + o.owedCents, 0), otherDebtCents: other, perOwner: moneyPer },
-    pendingReview: (db.prepare('SELECT COUNT(*) n FROM txn WHERE review_reason IS NOT NULL').get() as { n: number }).n,
+    pendingReview: (db.prepare('SELECT COUNT(*) n FROM txn WHERE review_reason IS NOT NULL AND posted_date >= ?').get(recentFrom(today, olderAfterDays(db))) as { n: number }).n,
     facts
   }
 }

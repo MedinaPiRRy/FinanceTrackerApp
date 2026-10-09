@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
+import { monthEnd } from '../../core/budgets'
+import { useKept } from '../nav'
 import { api } from '../api'
+import { ReviewNotice } from '../components/ReviewNotice'
 import { Chart, type ChartColors } from '../components/Chart'
 import { Card, ChartCard, ErrorBox, Segmented, Stat } from '../components/ui'
 import { formatCents, monthLabel, pct, shortMonth } from '../format'
 import type { HouseholdOverview } from '../../db/household'
-import type { Page } from '../App'
+import type { Page, TxnPreset } from '../App'
 
 type Period = '3' | '6' | '12' | 'all'
 const dollars = (cents: number) => (Math.abs(cents) >= 100000 ? `${(cents / 100000).toFixed(1)}k` : `${Math.round(cents / 100)}`)
@@ -14,9 +17,9 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 const slotColor = (c: ChartColors, i: number) => [c.s1, c.s2, c.s3][i] ?? c.s3
 const slotVar = (i: number) => ['var(--series-1)', 'var(--series-2)', 'var(--series-3)'][i] ?? 'var(--series-3)'
 
-export function HouseholdDashboard({ goto }: { goto: (p: Page) => void }) {
-  const [month, setMonth] = useState<string | undefined>()
-  const [period, setPeriod] = useState<Period>('6')
+export function HouseholdDashboard({ goto }: { goto: (p: Page, preset?: TxnPreset) => void }) {
+  const [month, setMonth] = useKept<string | undefined>('month', undefined)
+  const [period, setPeriod] = useKept<Period>('period', '6')
   const [data, setData] = useState<HouseholdOverview | null | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => { api('householdOverview', month).then(setData).catch((e: Error) => setError(e.message)) }, [month])
@@ -70,6 +73,8 @@ export function HouseholdDashboard({ goto }: { goto: (p: Page) => void }) {
   if (data === null) return <Card><h2>No household activity yet</h2><p className="sub">There are no recorded transactions to combine.</p></Card>
 
   const c = data.combined
+  /** Open the household Transactions page on this month (or another), for one kind of money, one person or one category group. */
+  const go = (opts: { kind?: string; personId?: number; groupName?: string; month?: string } = {}) => { const m = opts.month ?? data.month; goto('transactions', { kind: opts.kind, personId: opts.personId, groupName: opts.groupName, from: `${m}-01`, to: monthEnd(m) }) }
   const active = data.perOwner.filter((o) => o.kind === 'person' || o.incomeCents !== 0 || o.expenseCents !== 0)
   return (
     <>
@@ -78,13 +83,14 @@ export function HouseholdDashboard({ goto }: { goto: (p: Page) => void }) {
         <label className="field">Month<select value={data.month} onChange={(e) => setMonth(e.target.value)} aria-label="Select month">{[...data.availableMonths].reverse().map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select></label>
       </div>
 
+      <ReviewNotice profileId={null} goto={goto} />
       {data.pendingReview > 0 && <div className="banner"><span>{data.pendingReview} transactions across your finances are waiting for review. Until then they are not counted as income or spending.</span></div>}
 
       <div className="grid stats">
-        <Stat label="Combined income" value={formatCents(c.incomeCents)} hint="Both of you plus shared accounts" />
-        <Stat label="Combined spending" value={formatCents(c.expenseCents)} hint="After refunds, excluding transfers" />
-        <Stat label="Net together" value={formatCents(c.netCents, { sign: true })} tone={c.netCents < 0 ? 'neg' : 'pos'} hint={`Savings rate ${pct(c.savingsRate)}`} />
-        <Stat label="Money in accounts" value={formatCents(data.money.assetsCents)} hint={`Owed: ${formatCents(data.money.owedCardsCents)} on cards${data.money.otherDebtCents ? ` + ${formatCents(data.money.otherDebtCents)} in loans` : ''}`} />
+        <Stat label="Combined income" value={formatCents(c.incomeCents)} hint="Both of you plus shared accounts" onClick={() => go({ kind: 'income' })} title="See the money that came in" />
+        <Stat label="Combined spending" value={formatCents(c.expenseCents)} hint="After refunds, excluding transfers" onClick={() => go({ kind: 'expense,refund' })} title="See the money that went out" />
+        <Stat label="Net together" value={formatCents(c.netCents, { sign: true })} tone={c.netCents < 0 ? 'neg' : 'pos'} hint={`Savings rate ${pct(c.savingsRate)}`} onClick={() => go({ kind: 'income,expense,refund' })} title="See all the income and spending" />
+        <Stat label="Money in accounts" value={formatCents(data.money.assetsCents)} hint={`Owed: ${formatCents(data.money.owedCardsCents)} on cards${data.money.otherDebtCents ? ` + ${formatCents(data.money.otherDebtCents)} in loans` : ''}`} onClick={() => goto('accounts')} title="Open the accounts" />
       </div>
 
       <Card>
@@ -97,7 +103,7 @@ export function HouseholdDashboard({ goto }: { goto: (p: Page) => void }) {
               const i = data.owners.findIndex((x) => x.profileId === o.profileId)
               return (
                 <tr key={o.profileId}>
-                  <td><span className="person-dot" style={{ background: slotVar(i) }} aria-hidden="true" />{o.kind === 'household' ? 'Shared accounts' : o.name}</td>
+                  <td><span className="person-dot" style={{ background: slotVar(i) }} aria-hidden="true" /><button className="txn-link" title="See this person's transactions this month" onClick={() => go({ kind: 'income,expense,refund', personId: o.profileId })}>{o.kind === 'household' ? 'Shared accounts' : o.name}</button></td>
                   <td className="r num">{formatCents(o.incomeCents)}</td><td className="r num">{formatCents(o.expenseCents)}</td>
                   <td className={`r num ${o.netCents < 0 ? 'neg' : ''}`}>{formatCents(o.netCents, { sign: true })}</td>
                   <td className="r num">{formatCents(m?.assetsCents ?? 0)}</td><td className="r num">{formatCents(m?.owedCents ?? 0)}</td>
@@ -113,18 +119,18 @@ export function HouseholdDashboard({ goto }: { goto: (p: Page) => void }) {
       <div className="grid two">
         <ChartCard
           title="Household spending by month"
-          subtitle="Stacked by person, so each share is visible"
+          subtitle="Stacked by person, so each share is visible. Click a bar to see that person's spending that month"
           controls={<Segmented small label="Time period" value={period} onChange={setPeriod} options={[{ value: '3', label: '3M' }, { value: '6', label: '6M' }, { value: '12', label: '12M' }, { value: 'all', label: 'All' }]} />}
           table={{ headers: ['Month', ...data.owners.map((o) => o.name), 'Together', 'Income'], rows: series.map((s) => [monthLabel(s.month), ...data.owners.map((o) => formatCents(s.perOwnerExpense[o.profileId] ?? 0)), formatCents(s.expenseCents), formatCents(s.incomeCents)]) }}
         >
-          <Chart build={barOption} label="Stacked bar chart of household spending by month and person" />
+          <Chart build={barOption} label="Stacked bar chart of household spending by month and person" onClick={(_n, p) => { const m = series[p.dataIndex]?.month; const o = data.owners.find((x) => x.name === p.seriesName); if (m) go({ kind: 'expense,refund', personId: o?.profileId, month: m }) }} />
         </ChartCard>
         <ChartCard
           title="Where the household's money went"
-          subtitle="Category groups combine both of your categories"
+          subtitle="Category groups combine both of your categories. Click a bar to see those transactions"
           table={{ headers: ['Group', ...data.owners.map((o) => o.name), 'Together'], rows: data.groups.map((g) => [g.group, ...data.owners.map((o) => formatCents(g.perOwner[o.profileId] ?? 0)), formatCents(g.totalCents)]) }}
         >
-          <Chart build={groupOption} height={Math.max(240, topGroups.length * 34 + 50)} label="Stacked bar chart of household spending by category group" />
+          <Chart build={groupOption} height={Math.max(240, topGroups.length * 34 + 50)} label="Stacked bar chart of household spending by category group" onClick={(name) => go({ groupName: name })} />
         </ChartCard>
       </div>
 

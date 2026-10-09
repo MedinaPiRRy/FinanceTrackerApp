@@ -7,6 +7,8 @@ import { generateInsights, type Insight } from '../core/insights'
 import { addMonths, monthKey, toIso } from '../core/dates'
 import { groupOf } from '../core/groups'
 import { budgetReport } from './budgets'
+import { recentFrom } from '../core/reviewTabs'
+import { olderAfterDays } from './appSettings'
 import { pairReversals, reversedIds } from '../core/offsets'
 import { refundedItemIds } from './recurringDetect'
 import { listGoals } from './goals'
@@ -135,7 +137,11 @@ export function queryTxns(db: Db, profileIds: number | number[], f: TxnFilter = 
     const inGroup = cats.filter((c) => groupOf(c) === f.groupName).map((c) => c.id)
     where.push(inGroup.length ? `t.category_id IN (${inGroup.join(',')})` : '0')
   }
-  if (f.kind) { where.push('t.kind = @kind'); named.kind = f.kind }
+  if (f.kind) {
+    // one kind, or several separated by commas ("expense,refund" is what the dashboard calls spending)
+    const kinds = f.kind.split(',').filter((k) => ['income', 'expense', 'refund', 'transfer', 'unclassified'].includes(k))
+    where.push(kinds.length ? `t.kind IN (${kinds.map((k) => `'${k}'`).join(',')})` : '0')
+  }
   if (f.from) { where.push('t.posted_date >= @from'); named.from = f.from }
   if (f.to) { where.push('t.posted_date <= @to'); named.to = f.to }
   if (f.minCents !== undefined) { where.push('ABS(t.amount_cents) >= @min'); named.min = f.minCents }
@@ -174,6 +180,39 @@ export function setTxnCategory(db: Db, txnId: number, categoryId: number): void 
     const d = db.prepare('SELECT description, description_raw AS raw FROM txn WHERE id = ?').get(txnId) as { description: string; raw: string | null }
     rememberCategory(db, t.profile_id, d.raw ?? d.description, d.description, categoryId)
   })()
+}
+
+/** Most rows one bulk change may touch (a safety limit, not a practical one). */
+export const BULK_LIMIT = 5000
+
+/**
+ * Puts many transactions in one category at once. Every row is checked the same way as a single change, and nothing
+ * is changed unless all of them are valid. With `remember`, similar future transactions (same merchant name) go to the
+ * same category too; that is only done when the person asks.
+ */
+export function setCategoryMany(db: Db, txnIds: number[], categoryId: number, remember = false): { updated: number; remembered: number } {
+  const ids = [...new Set(txnIds)]
+  if (ids.length === 0) throw new Error('Select at least one transaction first.')
+  if (ids.length > BULK_LIMIT) throw new Error(`Select at most ${BULK_LIMIT} transactions at a time.`)
+  const c = db.prepare('SELECT profile_id, kind FROM category WHERE id = ?').get(categoryId) as { profile_id: number; kind: string } | undefined
+  if (!c) throw new Error('That category no longer exists. Pick another.')
+  const rows = db.prepare(`SELECT id, profile_id, kind, description, description_raw AS raw FROM txn WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids) as { id: number; profile_id: number; kind: string; description: string; raw: string | null }[]
+  if (rows.length !== ids.length) throw new Error('Some of those transactions no longer exist. Reload the page.')
+  for (const t of rows) {
+    if (t.profile_id !== c.profile_id) throw new Error('That category belongs to someone else, and some selected transactions are not theirs. Select one person\u2019s transactions.')
+    const need = t.kind === 'income' ? 'income' : t.kind === 'expense' || t.kind === 'refund' ? 'expense' : null
+    if (!need) throw new Error('Only income, expense and refund rows have a category. Transfers and rows waiting in Review cannot be moved here.')
+    if (c.kind !== need) throw new Error(`The selection mixes income and spending. A ${c.kind} category fits only ${c.kind} rows.`)
+  }
+  let remembered = 0
+  db.transaction(() => {
+    const upd = db.prepare('UPDATE txn SET category_id = ? WHERE id = ?')
+    for (const t of rows) {
+      upd.run(categoryId, t.id)
+      if (remember && rememberCategory(db, t.profile_id, t.raw ?? t.description, t.description, categoryId)) remembered++
+    }
+  })()
+  return { updated: rows.length, remembered }
 }
 
 export interface RecurringRow {
@@ -275,7 +314,8 @@ export function getDashboard(db: Db, profileId: number, requestedMonth?: string,
     recurring: { monthlyCents: recMonthly, annualCents: recMonthly * 12, pctOfIncome: incomeBase > 0 ? recMonthly / incomeBase : null, count: rec.length },
     budget: br.lines.length ? { budgetCents: br.totals.budgetCents, spentCents: br.totals.spentCents, remainingCents: br.totals.remainingCents, overCount: br.lines.filter((l) => l.state === 'over').length, count: br.lines.length } : null,
     insights: generateInsights({ cards: listAccounts(db, profileId).filter((a) => a.type === 'credit_card' && !a.archived && (a.creditLimitCents ?? 0) > 0).map((a) => ({ name: a.name, owedCents: Math.max(0, -(a.valueCents ?? 0)), limitCents: a.creditLimitCents! })), month, series, txns: real.map((r) => ({ ...r })), recurringMonthlyCents: recMonthly, budgets: br.lines.map((l) => ({ name: l.name, budgetCents: l.budgetCents, spentCents: l.spentCents, projectedCents: l.projectedCents })), goals: goals.map((g) => ({ name: g.name, deadline: g.deadline, plannedMonthlyCents: g.plannedMonthlyCents, progress: g.progress })) }),
-    reviewCount: (db.prepare('SELECT COUNT(*) n FROM txn WHERE profile_id = ? AND review_reason IS NOT NULL').get(profileId) as { n: number }).n
+    // only recent ones are pushed at the person; older ones are set aside (they have their own tab in Review and a notice)
+    reviewCount: (db.prepare('SELECT COUNT(*) n FROM txn WHERE profile_id = ? AND review_reason IS NOT NULL AND posted_date >= ?').get(profileId, recentFrom(today, olderAfterDays(db))) as { n: number }).n
   }
 }
 

@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
+import { monthEnd } from '../../core/budgets'
+import { useKept } from '../nav'
 import { api } from '../api'
+import { ReviewNotice } from '../components/ReviewNotice'
 import { txnPreset } from '../txnLink'
 import { Card, ErrorBox } from '../components/ui'
 import { formatCents, monthLabel } from '../format'
@@ -15,10 +18,10 @@ const TYPE_LABEL: Record<string, string> = { fact: 'Fact', trend: 'Trend', anoma
 const PAGE_LABEL: Record<string, string> = { transactions: 'transactions', budget: 'Budget', goals: 'Goals', recurring: 'Recurring', forecast: 'Forecast', accounts: 'Accounts' }
 
 export function Insights({ profile, categories, goto, openId }: { profile: Profile; categories: CategoryInfo[]; goto: (p: Page, preset?: TxnPreset) => void; openId?: string }) {
-  const [month, setMonth] = useState<string | undefined>()
+  const [month, setMonth] = useKept<string | undefined>('month', undefined)
   const [data, setData] = useState<Awaited<ReturnType<typeof api<'insights'>>> | null>(null)
-  const [filter, setFilter] = useState<Filter>('all')
-  const [open, setOpen] = useState<string | null>(openId ?? null)
+  const [filter, setFilter] = useKept<Filter>('filter', 'all')
+  const [open, setOpen] = useKept<string | null>('open', openId ?? null)
   const [evidence, setEvidence] = useState<Record<string, Evidence>>({})
   const [error, setError] = useState<string | null>(null)
 
@@ -42,7 +45,7 @@ export function Insights({ profile, categories, goto, openId }: { profile: Profi
     if (r.page === 'transactions') {
       const categoryId = r.category ? categories.find((c) => c.name === r.category && c.kind === 'expense')?.id : undefined
       if (r.txnId !== undefined && r.accountId !== undefined && r.date) goto('transactions', txnPreset({ id: r.txnId, accountId: r.accountId, date: r.date }))
-      else goto('transactions', { categoryId, text: r.text, from: r.month ? `${r.month}-01` : undefined, to: r.month ? `${r.month}-31` : undefined })
+      else goto('transactions', { categoryId, text: r.text, from: r.month ? `${r.month}-01` : undefined, to: r.month ? monthEnd(r.month) : undefined })
     } else goto(r.page as Page)
   }
 
@@ -56,6 +59,7 @@ export function Insights({ profile, categories, goto, openId }: { profile: Profi
         {data.availableMonths.length > 0 && <label className="field">Month<select value={month} onChange={(e) => { setMonth(e.target.value); setOpen(null); setEvidence({}) }}>{[...data.availableMonths].reverse().map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select></label>}
       </div>
       <ErrorBox error={error} />
+      <ReviewNotice profileId={profile.id} goto={goto} />
       <div className="chips" role="group" aria-label="Filter insights" style={{ marginBottom: 12 }}>
         {FILTERS.map((f) => <button key={f.id} className={`btn small ${filter === f.id ? 'primary' : ''}`} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label} ({data.insights.filter((i) => matches(i, f.id)).length})</button>)}
       </div>

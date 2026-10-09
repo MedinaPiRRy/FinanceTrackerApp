@@ -4,6 +4,7 @@ import type { Db } from './open'
 import { pairTransfers } from './transfers'
 import { rememberCategory } from './rules'
 import { rememberLastAccount } from './importMatch'
+import { findSourceRule, directionOf } from './sourceRules'
 import { isPartnerPayee, partnerOf, addPartnerAlias } from './partners'
 import { normalizeKey, displayName } from '../core/normalize'
 import { daysBetween } from '../core/dates'
@@ -108,6 +109,13 @@ export function buildPreview(db: Db, profileId: number, accountId: number, parse
       kind = 'transfer'
       reviewReason = null
       counterpartyProfileId = partner.id
+    }
+    // a source the person already decided about ("always file money from Sam as income / Gifts") is filed the same way, in the same direction
+    if (kind === 'unclassified' && counterpartyProfileId === null) {
+      const sr = findSourceRule(db, profileId, key, directionOf(r.amountCents))
+      const srCat = sr?.categoryId != null ? catById.get(sr.categoryId) : undefined
+      if (sr && sr.kind === 'transfer') { kind = 'transfer'; reviewReason = null; categoryId = null; source = 'user' }
+      else if (sr && srCat && srCat.kind === (sr.kind === 'income' ? 'income' : 'expense')) { kind = sr.kind; reviewReason = null; categoryId = srCat.id; source = 'user' }
     }
     let description: string
     if (counterpartyProfileId !== null) description = `E-Transfer ${r.amountCents > 0 ? 'from' : 'to'} ${displayName(key)} (between us)`

@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useKept } from '../nav'
 import { api } from '../api'
+import { ReviewNotice } from '../components/ReviewNotice'
 import { Chart, type ChartColors } from '../components/Chart'
 import { Card, ChartCard, ErrorBox, Segmented } from '../components/ui'
 import { formatCents, monthLabel, shortMonth } from '../format'
 import { emptyWhatIf, type ForecastCase, type ForecastInput, type WhatIf } from '../../core/forecast'
 import type { ForecastView } from '../../db/forecast'
 import type { Profile } from '../../db/queries'
-import type { Page } from '../App'
+import type { Page, TxnPreset } from '../App'
 
 const HORIZONS = [12, 24, 36, 60]
 const dollars = (cents: number) => Math.round(cents / 100)
@@ -18,13 +20,13 @@ function Kpi({ label, value, hint, tone }: { label: string; value: string; hint?
   return <Card className="stat"><div className="label">{label}</div><div className={`value num ${tone === 'neg' ? 'neg' : tone === 'pos' ? 'pos' : ''}`}>{value}</div>{hint && <div className="hint">{hint}</div>}</Card>
 }
 
-export function Forecast({ profile, goto }: { profile: Profile; goto: (p: Page) => void }) {
-  const [months, setMonths] = useState(24)
+export function Forecast({ profile, goto }: { profile: Profile; goto: (p: Page, pre?: TxnPreset) => void }) {
+  const [months, setMonths] = useKept('months', 24)
   const [data, setData] = useState<ForecastView | null>(null)
   const [w, setW] = useState<WhatIf | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
-  const [scenario, setScenario] = useState<'current' | 'plan' | 'whatif'>('plan')
+  const [scenario, setScenario] = useKept<'current' | 'plan' | 'whatif'>('scenario', 'plan')
   const [showTable, setShowTable] = useState(false)
   const first = useRef(true)
 
@@ -118,6 +120,7 @@ export function Forecast({ profile, goto }: { profile: Profile; goto: (p: Page) 
         <label className="field">Look ahead<select value={months} onChange={(e) => setMonths(Number(e.target.value))}>{HORIZONS.map((h) => <option key={h} value={h}>{h} months</option>)}</select></label>
       </div>
       <ErrorBox error={error} />
+      <ReviewNotice profileId={(profile as { kind?: string }).kind === 'household' ? null : profile.id} goto={goto} />
       {data.notes.map((n) => <div key={n} className="notice" style={{ marginBottom: 12 }}>{n}</div>)}
 
       <div className="grid stats">

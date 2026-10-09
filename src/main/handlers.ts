@@ -3,18 +3,27 @@
 import path from 'node:path'
 import fs from 'node:fs'
 import { openDb, defaultDbPath, ensureHouseholdProfile, type Db } from '../db/open'
-import { listProfiles, findHouseholdProfile, listAccounts, listCategories, queryTxns, setTxnCategory, createCategory, getDashboard, listRecurring, listCashBills, listDebts, type TxnFilter } from '../db/queries'
-import { listReviewQueue, resolveReview, setValuation, type Decision } from '../db/review'
+import { listProfiles, findHouseholdProfile, listAccounts, listCategories, queryTxns, setTxnCategory, setCategoryMany, createCategory, getDashboard, listRecurring, listCashBills, listDebts, type TxnFilter } from '../db/queries'
+import { listReviewQueue, resolveReview, resolveReviewGroup, reviewSummary, reviewNotice, reviewGroups, reviewGroupItems, setValuation, type Decision } from '../db/review'
+import { listSourceRules, deleteSourceRule } from '../db/sourceRules'
+import type { ReviewTab } from '../core/reviewTabs'
 import { addTip, lastRates, addCashSpend, recordCashBill, depositCash, deleteCashEntry, cashBalanceCents } from '../db/cash'
 import { buildPreview, commitImport, listImports, undoImport, type CommitRow } from '../db/import'
 import { readStatementRows } from '../importers/statementFile'
 import { parseStatement, validColumnMap, layoutOf, type ParseOptions } from '../core/statement'
 import { hashFile, previousImportOf, suggestAccount, type ImportMeta } from '../db/importMatch'
-import { createBudget, updateBudget, deleteBudget, budgetReport, suggestBudgets, createBudgets } from '../db/budgets'
+import { createBudget, updateBudget, deleteBudget, budgetReport, suggestBudgets, createBudgets, listBudgets } from '../db/budgets'
 import { createGoal, updateGoal, deleteGoal, listGoals, type GoalDto } from '../db/goals'
 import { createDebt, updateDebtBalance, debtHistory } from '../db/debts'
 import { getMonthlyReview } from '../db/monthly'
 import { createAccount, setCreditLimit, renameAccount, closeAccount, reopenAccount, moveAccount, type NewAccount } from '../db/accounts'
+import { addPartner, addHousehold, removeHousehold, removePartner } from '../db/modeChange'
+import { getAppSettings, setAppSetting, type AppSettings } from '../db/appSettings'
+import { listCategoryManage, renameCategory, deleteCategory, setCategoryBudget } from '../db/categoriesManage'
+import { renameProfile } from '../db/profilesManage'
+import { exportTransactionsCsv } from '../db/exportCsv'
+import { updateAccount, deleteAccount, type DeleteAccountOptions } from '../db/accounts'
+import { autoBackupIfDue, removeDatabaseFiles, type PlatformHooks } from './maintenance'
 import { createSetup, getAppMode, type AppMode, type NewPerson } from '../db/defaults'
 import { generateSample } from '../demo/sample'
 import { getForecast, saveWhatIf } from '../db/forecast'
@@ -28,7 +37,7 @@ import { suggestRecurring, refundedCharges, addDetected, dismissSuggestion, stop
 import { getPartnerAliases, setPartnerAliases, partnerOf } from '../db/partners'
 import { getHouseholdOverview, listHouseholdAccounts, listHouseholdBudgets, householdBudgetReport, createHouseholdBudget, updateHouseholdBudget, deleteHouseholdBudget, listHouseholdGoals, listCategoryGroups, setCategoryGroup, listGroupNames, listOwners, suggestHouseholdBudgets, createHouseholdBudgets } from '../db/household'
 
-export function createHandlers(realPath: string = process.env.FINANCE_DB ?? defaultDbPath()) {
+export function createHandlers(realPath: string = process.env.FINANCE_DB ?? defaultDbPath(), hooks: PlatformHooks = {}) {
   // Sample data lives in its own database file, so it can never mix with real data. app-state.json says which one is open.
   const dataDir = path.dirname(realPath)
   const samplePath = path.join(dataDir, 'sample.db')
@@ -56,9 +65,27 @@ export function createHandlers(realPath: string = process.env.FINANCE_DB ?? defa
     open().exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`)
     return { file, sizeBytes: fs.statSync(file).size }
   }
+  /** Erases the real database (after a backup if asked). The caller names the word the person had to type. */
+  const eraseEverything = (typed: string, word: string, keepBackup: boolean) => {
+    if (typed.trim() !== word) throw new Error(`Type ${word} to confirm.`)
+    if (sampleActive()) throw new Error('Sample data is open. Leave the sample first; it holds no real data to erase.')
+    let backupFile: string | null = null
+    if (keepBackup && profileCount() > 0) backupFile = backup().file
+    db?.close(); db = null
+    removeDatabaseFiles(realPath)
+    return { backupFile }
+  }
+  let autoDone = false
+  /** Once per run: today's automatic backup (if the person turned them on), keeping the newest few. A failure never stops the app. */
+  const autoBackup = () => {
+    if (autoDone || !canSwitch || sampleActive()) return
+    autoDone = true
+    try { autoBackupIfDue(path.join(dataDir, 'backups'), getAppSettings(open()).autoBackupKeep, today(), (f) => { open().exec(`VACUUM INTO '${f.replace(/'/g, "''")}'`) }) } catch (e) { console.error('Automatic backup skipped:', e) }
+  }
   return {
     status: () => {
       const hasData = profileCount() > 0
+      if (hasData) autoBackup()
       return { dbPath: dbPath(), hasData, mode: hasData ? getAppMode(open()) : null, sample: sampleActive() }
     },
 
@@ -96,6 +123,9 @@ export function createHandlers(realPath: string = process.env.FINANCE_DB ?? defa
     categories: (profileId: number) => listCategories(open(), profileId),
     createCategory: (profileId: number, name: string, kind: 'expense' | 'income') => createCategory(open(), profileId, name, kind),
     txns: (profileId: number, filter: TxnFilter) => queryTxns(open(), profileId, filter),
+    /** The ids of every transaction matching a filter (up to the bulk limit), for "select all that match". */
+    txnIds: (profileId: number, filter: TxnFilter) => queryTxns(open(), profileId, { ...filter, limit: 5000, offset: 0 }).rows.map((r) => r.id),
+    setCategoryMany: (txnIds: number[], categoryId: number, remember?: boolean) => setCategoryMany(open(), txnIds, categoryId, !!remember),
     setCategory: (txnId: number, categoryId: number) => setTxnCategory(open(), txnId, categoryId),
     dashboard: (profileId: number, month?: string) => getDashboard(open(), profileId, month),
     recurring: (profileId: number) => listRecurring(open(), profileId),
@@ -118,7 +148,15 @@ export function createHandlers(realPath: string = process.env.FINANCE_DB ?? defa
     allDebts: () => (open().prepare("SELECT d.id, d.name || ' (' || p.name || ')' AS name, d.balance_cents AS balanceCents, d.as_of AS asOf, d.notes FROM debt d JOIN profile p ON p.id = d.profile_id ORDER BY d.balance_cents DESC").all() as { id: number; name: string; balanceCents: number; asOf: string; notes: string | null }[]),
 
     reviewQueue: (profileId: number) => listReviewQueue(open(), profileId),
-    resolveReview: (txnId: number, decision: Decision) => resolveReview(open(), txnId, decision),
+    reviewSummary: (profileId: number) => reviewSummary(open(), profileId, today()),
+    /** Recent and older waiting counts for the notices on the statistics pages (null = everyone, for the household view). */
+    reviewNotice: (profileId: number | null) => reviewNotice(open(), profileId, today()),
+    reviewGroups: (profileId: number, tab: ReviewTab, offset: number, limit: number) => reviewGroups(open(), profileId, tab, today(), offset, limit),
+    reviewGroupItems: (profileId: number, tab: ReviewTab, key: string, offset: number, limit: number) => reviewGroupItems(open(), profileId, tab, today(), key, offset, limit),
+    reviewResolveGroup: (profileId: number, tab: ReviewTab, key: string, decision: Decision, remember: boolean) => resolveReviewGroup(open(), profileId, tab, today(), key, decision, { remember }),
+    sourceRules: (profileId: number) => listSourceRules(open(), profileId),
+    sourceRuleDelete: (profileId: number, id: number) => deleteSourceRule(open(), profileId, id),
+    resolveReview: (txnId: number, decision: Decision, remember?: boolean) => resolveReview(open(), txnId, decision, { remember: !!remember }),
     setValuation: (accountId: number, asOf: string, valueCents: number, note?: string) => setValuation(open(), accountId, asOf, valueCents, note),
 
     cash: (profileId: number) => {
@@ -218,6 +256,38 @@ export function createHandlers(realPath: string = process.env.FINANCE_DB ?? defa
     },
     /** A consistent copy of the whole database (safe even while the app is running). */
     backupNow: () => backup(),
+    // ---- settings ----
+    appSettings: () => getAppSettings(open()),
+    setAppSetting: (key: keyof AppSettings, value: AppSettings[keyof AppSettings]) => setAppSetting(open(), key, value as never),
+    renameProfile: (profileId: number, name: string) => renameProfile(open(), profileId, name),
+    budgetList: (profileId: number) => listBudgets(open(), profileId),
+    categoryManage: (profileId: number) => listCategoryManage(open(), profileId),
+    categoryRename: (profileId: number, id: number, name: string) => renameCategory(open(), profileId, id, name),
+    categoryDelete: (profileId: number, id: number, moveToId: number | null) => deleteCategory(open(), profileId, id, moveToId),
+    categorySetBudget: (profileId: number, categoryId: number, budgetId: number | null) => setCategoryBudget(open(), profileId, categoryId, budgetId),
+    accountUpdate: (profileId: number, id: number, patch: { name?: string; institution?: string | null; creditLimitCents?: number | null }) => updateAccount(open(), profileId, id, patch),
+    /** Deleting an account always makes a backup copy first. */
+    accountDelete: (profileId: number, id: number, opts: DeleteAccountOptions) => { backup(); return deleteAccount(open(), profileId, id, opts) },
+    /** Every transaction as a CSV file: saved where the person chooses in the installed app, or returned to the browser in development. */
+    exportCsv: async (profileId: number | null) => {
+      const r = exportTransactionsCsv(open(), profileId)
+      if (!hooks.saveTextFile) return { fileName: r.fileName, count: r.count, savedTo: null as string | null, cancelled: false, csv: r.csv as string | undefined }
+      const savedTo = await hooks.saveTextFile(r.fileName, r.csv)
+      return { fileName: r.fileName, count: r.count, savedTo, cancelled: savedTo === null, csv: undefined as string | undefined }
+    },
+    /** Erases every transaction, account and setting of the person's real data (never sample data). The typed word is checked here too. */
+    eraseAll: (confirm: string, keepBackup: boolean) => eraseEverything(confirm, 'ERASE', keepBackup),
+    /** Erases the data, then starts the uninstaller (Windows) or says how to remove the app (other systems). */
+    deleteApp: (confirm: string, keepBackup: boolean) => {
+      const r = eraseEverything(confirm, 'DELETE', keepBackup)
+      const u = hooks.startUninstaller ? hooks.startUninstaller() : { started: false, message: 'Your data is erased. Removing the app itself is only possible from the installed app.' }
+      return { ...r, uninstallerStarted: u.started, message: u.message }
+    },
+    // ---- changing the setup ----
+    addPartner: (person: NewPerson) => addPartner(open(), person),
+    addHousehold: () => addHousehold(open()),
+    removeHousehold: (confirm: string) => { backup(); removeHousehold(open(), confirm) },
+    removePartner: (partnerId: number, confirmName: string) => { backup(); removePartner(open(), partnerId, confirmName) },
 
     // ---- accounts: add, rename, close, share ----
     accountCreate: (profileId: number, a: NewAccount) => createAccount(open(), profileId, a),

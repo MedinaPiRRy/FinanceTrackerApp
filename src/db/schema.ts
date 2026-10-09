@@ -2,7 +2,7 @@
 // Balance convention for every account: opening_balance_cents + SUM(amount_cents).
 //   Chequing/savings: positive = money you have.
 //   Credit card:      negative = money owed (a charge is a negative amount, a payment is positive).
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 /** 'household' is a pseudo-profile that owns the accounts you share (and their transactions). */
 export const V4_PROFILE_COLUMN = `,
@@ -74,6 +74,21 @@ CREATE TABLE debt_history (
   as_of          TEXT NOT NULL,
   balance_cents  INTEGER NOT NULL,
   UNIQUE (debt_id, as_of)
+);
+`
+
+/** Added with the "remember this source" feature. Shared by the fresh schema and the migration so they cannot drift apart. */
+export const SOURCE_RULE_TABLE = `
+-- "Always file money from/to this source this way": applied to review items and to future imports.
+CREATE TABLE source_rule (
+  id           INTEGER PRIMARY KEY,
+  profile_id   INTEGER NOT NULL REFERENCES profile(id),
+  source_key   TEXT NOT NULL,                         -- normalised bank description (for an e-transfer: the person's name)
+  direction    TEXT NOT NULL CHECK (direction IN ('in','out')),
+  kind         TEXT NOT NULL CHECK (kind IN ('income','expense','refund','transfer')),
+  category_id  INTEGER REFERENCES category(id) ON DELETE SET NULL,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (profile_id, source_key, direction)
 );
 `
 
@@ -216,7 +231,10 @@ CREATE TABLE setting (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+${SOURCE_RULE_TABLE}
 `
 
 /** SQL for upgrading a database from version N-1 to N. Empty until the first schema change after release. */
-export const MIGRATIONS: Record<number, { guard: string[]; sql: string }> = {}
+export const MIGRATIONS: Record<number, { guard: string[]; sql: string }> = {
+  2: { guard: [], sql: SOURCE_RULE_TABLE }
+}

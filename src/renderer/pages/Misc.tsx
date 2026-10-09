@@ -1,17 +1,30 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { Card, ErrorBox, Segmented } from '../components/ui'
+import { RememberedSources } from '../components/RememberedSources'
+import { GeneralSettings } from '../components/GeneralSettings'
+import { CategoryManager } from '../components/CategoryManager'
+import { AccountManager } from '../components/AccountManager'
+import { ExportCard, DangerZone } from '../components/DataTools'
+import { SetupMode } from '../components/SetupMode'
 import { useTheme, type ThemeSetting } from '../theme'
 
 function formatBytes(n: number) {
   return n > 1_048_576 ? `${(n / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`
 }
 
-export function Settings({ profile, partner, sample, onLeaveSample }: {
+export function Settings({ profile, partner, sample, onLeaveSample, mode, onPeopleChanged, onDataChanged, onSetupChanged }: {
   profile: { id: number; name: string; kind: 'person' | 'household' }
   partner: { id: number; name: string } | null
   sample: boolean
   onLeaveSample: () => void
+  mode: 'single' | 'couple' | 'couple_household'
+  /** A person was renamed: reload the names everywhere. */
+  onPeopleChanged: () => void
+  /** Categories or accounts changed: reload the lists the other pages use. */
+  onDataChanged: () => void
+  /** The setup changed (partner or household added or removed). */
+  onSetupChanged: () => void
 }) {
   const { setting, setSetting } = useTheme()
   const [diag, setDiag] = useState<Awaited<ReturnType<typeof api<'diagnostics'>>> | null>(null)
@@ -43,6 +56,11 @@ export function Settings({ profile, partner, sample, onLeaveSample }: {
           <div className="card-head"><h2>Appearance</h2></div>
           <Segmented<ThemeSetting> label="Theme" value={setting} onChange={setSetting} options={[{ value: 'system', label: 'Match system' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} />
         </Card>
+        <GeneralSettings onRenamed={onPeopleChanged} />
+        <CategoryManager profileId={profile.id} onChanged={onDataChanged} />
+        <AccountManager profileId={profile.id} owner={profile.kind === 'household' ? 'Shared accounts' : profile.name} onChanged={onDataChanged} />
+        {!sample && <SetupMode mode={mode} onChanged={onSetupChanged} />}
+        {profile.kind === 'person' || profile.kind === 'household' ? <RememberedSources profileId={profile.id} /> : null}
         <Card>
           <div className="card-head"><h2>Your data</h2></div>
           <p className="sub" style={{ marginTop: 0 }}>Everything is stored on this computer in a single database file. Nothing is sent over the internet, and there is no analytics or account.</p>
@@ -60,6 +78,7 @@ export function Settings({ profile, partner, sample, onLeaveSample }: {
           </div>
           {backup && <p className="pos" role="status" style={{ marginBottom: 0, wordBreak: 'break-all' }}>{backup}</p>}
         </Card>
+        <ExportCard profileId={profile.id} ownLabel={profile.kind === 'household' ? 'Export the shared accounts transactions' : `Export ${profile.name}’s transactions`} everyone={mode !== 'single'} />
         {partner && profile.kind === 'person' && (
           <Card>
             <div className="card-head"><h2>Between {profile.name} and {partner.name}</h2></div>
@@ -68,6 +87,7 @@ export function Settings({ profile, partner, sample, onLeaveSample }: {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}><button className="btn primary" onClick={() => void saveAliases()}>Save names</button>{aliasMsg && <span className="pos" role="status">{aliasMsg}</span>}</div>
           </Card>
         )}
+        <DangerZone sample={sample} onErased={onLeaveSample} />
         <Card>
           <div className="card-head"><h2>About</h2></div>
           {!diag ? <p className="muted">Loading…</p> : (

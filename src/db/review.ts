@@ -6,6 +6,7 @@ import { normalizeKey, displayName } from '../core/normalize'
 import { reviewTabOf, recentFrom, REVIEW_TABS, type ReviewTab } from '../core/reviewTabs'
 import { olderAfterDays } from './appSettings'
 import { addSourceRule, directionOf, type RuleKind } from './sourceRules'
+import { linkPaymentToDebt } from './debtPayments'
 
 export interface ReviewItem {
   id: number
@@ -33,7 +34,7 @@ export function listReviewQueue(db: Db, profileId: number): ReviewItem[] {
 
 export type Decision =
   | { kind: 'income'; categoryId: number; note?: string }
-  | { kind: 'expense'; categoryId: number; note?: string }
+  | { kind: 'expense'; categoryId: number; note?: string; /** Also count this payment toward a loan the person tracks. */ debtId?: number }
   | { kind: 'refund'; categoryId: number; note?: string } // includes reimbursements: reduces spending in that category
   | { kind: 'transfer'; counterAccountId?: number; note?: string } // between your own accounts (or into a shared one); never counts as income/spending
   | { kind: 'between_us'; partnerProfileId: number; note?: string } // money to/from the other person: movement between you, not income or spending for either
@@ -103,8 +104,9 @@ export function resolveReview(db: Db, txnId: number, decision: Decision, opts: {
     }
     db.prepare("UPDATE txn SET kind = ?, category_id = ?, transfer_group = COALESCE(?, transfer_group), counterparty_profile_id = COALESCE(?, counterparty_profile_id), review_reason = NULL, reviewed_at = datetime('now'), notes = ? WHERE id = ?").run(decision.kind, categoryId, group, crossProfile, note, txnId)
     if (categoryId !== null && t.description_raw) rememberCategory(db, t.profile_id, t.description_raw, t.description, categoryId) // e-transfers are skipped inside
+    if (decision.kind === 'expense' && decision.debtId) linkPaymentToDebt(db, txnId, decision.debtId)
     if (opts.remember && (decision.kind === 'income' || decision.kind === 'expense' || decision.kind === 'refund' || decision.kind === 'transfer')) {
-      addSourceRule(db, t.profile_id, normalizeKey(t.description_raw ?? t.description), directionOf(t.amount_cents), decision.kind, categoryId)
+      addSourceRule(db, t.profile_id, normalizeKey(t.description_raw ?? t.description), directionOf(t.amount_cents), decision.kind, categoryId, decision.kind === 'expense' ? decision.debtId ?? null : null)
       also = applySourceRules(db, t.profile_id)
     }
   })()
@@ -119,7 +121,7 @@ const queueRows = (db: Db, profileId: number): QueueRow[] =>
 
 /** Files every waiting transaction whose source the person already decided about. Returns how many were filed. */
 export function applySourceRules(db: Db, profileId: number): number {
-  const rules = db.prepare('SELECT source_key AS k, direction AS d, kind, category_id AS c FROM source_rule WHERE profile_id = ?').all(profileId) as { k: string; d: string; kind: RuleKind; c: number | null }[]
+  const rules = db.prepare('SELECT source_key AS k, direction AS d, kind, category_id AS c, debt_id AS debt FROM source_rule WHERE profile_id = ?').all(profileId) as { k: string; d: string; kind: RuleKind; c: number | null; debt: number | null }[]
   if (rules.length === 0) return 0
   const byKey = new Map(rules.map((r) => [`${r.k}|${r.d}`, r]))
   let n = 0
@@ -129,7 +131,7 @@ export function applySourceRules(db: Db, profileId: number): number {
     let decision: Decision
     if (r.kind === 'transfer') decision = { kind: 'transfer' }
     else if (r.c === null) continue
-    else decision = { kind: r.kind, categoryId: r.c }
+    else decision = r.kind === 'expense' ? { kind: 'expense', categoryId: r.c, debtId: r.debt ?? undefined } : { kind: r.kind, categoryId: r.c }
     try { resolveReview(db, q.id, decision); n++ } catch { /* a stale rule (deleted category, changed sign) leaves the item waiting */ }
   }
   return n
@@ -149,10 +151,14 @@ export function reviewSummary(db: Db, profileId: number, today: string): ReviewS
   return { total: rows.length, recent: rows.length - older, older, tabs }
 }
 /** How many waiting transactions are recent and how many are older (set aside). `profileId` null = everyone (the household view). */
-export function reviewNotice(db: Db, profileId: number | null, today: string): { recent: number; older: number; days: number } {
+export function reviewNotice(db: Db, profileId: number | null, today: string, month?: string): { recent: number; older: number; days: number } {
   const days = olderAfterDays(db)
   const cut = recentFrom(today, days)
-  const r = db.prepare(`SELECT COALESCE(SUM(posted_date >= ?), 0) AS recent, COALESCE(SUM(posted_date < ?), 0) AS older FROM txn WHERE review_reason IS NOT NULL${profileId === null ? '' : ' AND profile_id = ?'}`).get(...(profileId === null ? [cut, cut] : [cut, cut, profileId])) as { recent: number; older: number }
+  const params: (string | number)[] = [cut, cut]
+  let where = 'review_reason IS NOT NULL'
+  if (profileId !== null) { where += ' AND profile_id = ?'; params.push(profileId) }
+  if (month) { where += ' AND substr(posted_date, 1, 7) = ?'; params.push(month) }
+  const r = db.prepare(`SELECT COALESCE(SUM(posted_date >= ?), 0) AS recent, COALESCE(SUM(posted_date < ?), 0) AS older FROM txn WHERE ${where}`).get(...params) as { recent: number; older: number }
   return { ...r, days }
 }
 

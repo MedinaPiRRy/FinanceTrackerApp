@@ -39,7 +39,7 @@ export function MonthlyReview({ profile, goto, categories }: { profile: Profile;
         <label className="field">Month<select value={data.month} onChange={(e) => setMonth(e.target.value)}>{[...data.availableMonths].reverse().map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select></label>
       </div>
 
-      <ReviewNotice profileId={profile.id} goto={goto} />
+      <ReviewNotice profileId={profile.id} month={data.month} goto={goto} />
       {(data.pending.reviewCount > 0 || data.pending.uncategorizedCount > 0) && (
         <div className="banner">
           <span>{data.pending.reviewCount > 0 && <>{data.pending.reviewCount} transactions are waiting for your review and are not counted. </>}{data.pending.uncategorizedCount > 0 && <>{data.pending.uncategorizedCount} this month have no category.</>}</span>

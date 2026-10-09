@@ -270,7 +270,7 @@ export function Import({ profile, accounts, categories, onChanged, goto, partner
                           {catEditable ? (
                             <select className="cat-select" aria-label={`Category for ${r.raw}`} value={r.categoryId ?? ''} onChange={(e) => setCategory(r, e.target.value)}>
                               <option value="">Choose…</option>
-                              {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                              {cats.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
                             </select>
                           ) : <span className="muted">{r.kind === 'transfer' ? 'not counted' : '—'}</span>}
                           {r.suggestionSource && r.categoryId === r.suggestedCategoryId && <div className="muted" style={{ fontSize: 11 }}>suggested from {r.suggestionSource === 'user' ? 'your earlier choice' : r.suggestionSource === 'alias' ? 'a learned name' : r.suggestionSource === 'history' ? 'your history' : 'keywords'}</div>}

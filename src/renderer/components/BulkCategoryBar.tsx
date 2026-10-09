@@ -50,8 +50,8 @@ export function BulkCategoryBar({ count, total, profileId, categories, onApply, 
         <label className="field">Move to category
           <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
             <option value="">Choose…</option>
-            <optgroup label="Spending">{categories.filter((c) => c.kind === 'expense').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>
-            <optgroup label="Income">{categories.filter((c) => c.kind === 'income').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>
+            <optgroup label="Spending">{categories.filter((c) => c.kind === 'expense').map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</optgroup>
+            <optgroup label="Income">{categories.filter((c) => c.kind === 'income').map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</optgroup>
           </select>
         </label>
         <label className="field">Or create one

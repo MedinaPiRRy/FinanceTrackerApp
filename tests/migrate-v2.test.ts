@@ -4,14 +4,14 @@ import os from 'node:os'
 import path from 'node:path'
 import Database from 'better-sqlite3'
 import { openDb } from '../src/db/open'
-import { SCHEMA_SQL, SOURCE_RULE_TABLE } from '../src/db/schema'
+import { SCHEMA_SQL, SOURCE_RULE_TABLE, FEATURE_TABLES } from '../src/db/schema'
 
 describe('upgrade from release 1.0.0 / 1.1.0 (schema 1)', () => {
   it('adds the remembered-sources table, keeps every row, and backs the file up first', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-mig-'))
     const file = path.join(dir, 'finance.db')
     const old = new Database(file)
-    old.exec(SCHEMA_SQL.replace(SOURCE_RULE_TABLE, ''))
+    old.exec(SCHEMA_SQL.replace(FEATURE_TABLES, '').replace(SOURCE_RULE_TABLE, ''))
     old.pragma('user_version = 1')
     old.prepare("INSERT INTO profile (slug,name) VALUES ('sam','Sam')").run()
     old.prepare("INSERT INTO account (profile_id,name,type) VALUES (1,'Chequing','chequing')").run()

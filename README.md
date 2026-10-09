@@ -57,6 +57,8 @@ downloaded from your bank (CSV or Excel). The importer:
 
 - **Dashboard** with income, spending, net, savings rate, comparison with previous months and insights.
 - **Budgets** you can build yourself or generate with **Suggest budgets from my last 3 months**, which shows the averages, rounds up to tidy limits, and lets you edit before anything is created. **Goals** (savings targets, paying off cards and loans, spending toward something) with the monthly amount needed.
+- **Subcategories**: put Perfumes under Health & Beauty or Gas under Transportation. They count toward the main category in budgets, charts, the forecast and goals, and you still see them on their own. **Rules by amount** file a purchase by how much it was (at gas stations, up to $30 is snacks and drinks, more is gas).
+- **Loan detail**: click a loan to see every payment counted toward it, how much is paid off, the pace and a chart. **Taxes & interest** has its own page with totals by month and year. **Net worth** includes a house, car, stocks or anything else you add, valued by hand with a history.
 - **Accounts**: chequing, savings, credit cards, loans, cash, and investments valued by hand. Add, rename, close, or mark an account as shared.
 - **Cash and tips**: record cash you earn and spend outside the bank.
 - **Recurring payments found for you**: the app spots subscriptions, rent, utilities and pay in your transactions (steady schedule, steady amount; groceries and other changing amounts are left out), offers to track them, and asks "was it cancelled?" when one stops appearing. It only asks when your data goes past the due date, so a statement you have not imported yet never triggers a question.
@@ -109,6 +111,8 @@ and attach them to a release.
 
 `finance.db` is your data, `sample.db` exists only while sample data is open, and `backups/` holds copies made by
 **Settings → Back up my data now** (or automatically each day, if you turn that on).
+
+**Accounts** can be matched to your bank ("Match my bank's balance" sets the starting balance so the two agree), duplicate transactions held by two accounts are found for you to remove, and a payment can count toward a loan you track (for example a student loan), lowering its balance.
 
 **Settings** also lets you rename people, choose the page the app opens on, add, rename and delete categories (and pick each
 spending category's budget), add, edit and delete accounts, move between *just me*, *me and my partner* and *plus a shared

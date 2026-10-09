@@ -121,6 +121,10 @@ describe('review by source', () => {
     expect(reviewGroups(db, p, 'older', TODAY).groups.map((g) => [g.name, g.count])).toEqual([['Sam Lee', 4], ['Jo Kim', 1]])
     expect(reviewNotice(db, p, TODAY)).toEqual({ recent: 2, older: 5, days: 90 })
     expect(reviewNotice(db, null, TODAY)).toEqual({ recent: 2, older: 5, days: 90 })
+    // the month warning only counts what is waiting in that month
+    expect(reviewNotice(db, p, TODAY, '2024-03')).toEqual({ recent: 0, older: 4, days: 90 })
+    expect(reviewNotice(db, p, TODAY, '2024-04')).toEqual({ recent: 0, older: 0, days: 90 })
+    expect(reviewNotice(db, p, TODAY, '2026-09')).toMatchObject({ older: 0 })
     add('2026-09-02', -100, 'COFFEE', null, 'expense')
     expect(getDashboard(db, p, undefined, TODAY)!.reviewCount).toBe(2) // the dashboard banner counts recent ones only
   })

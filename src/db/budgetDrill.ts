@@ -14,9 +14,13 @@ export interface BudgetDrill { name: string; month: string; budgetCents: number;
 export const DRILL_ROW_CAP = 200
 
 function build(db: Db, name: string, month: string, budgetCents: number, categoryIds: number[]): BudgetDrill {
+  // a budget on a main category also covers its subcategories, unless one of them has a budget of its own
+  const own = new Set((db.prepare('SELECT category_id AS c FROM budget_category').all() as { c: number }[]).map((r) => r.c))
+  const kids = categoryIds.length ? (db.prepare(`SELECT id FROM category WHERE parent_id IN (${categoryIds.map(() => '?').join(',')})`).all(...categoryIds) as { id: number }[]).map((r) => r.id).filter((id) => !own.has(id)) : []
+  categoryIds = [...new Set([...categoryIds, ...kids])]
   if (categoryIds.length === 0) return { name, month, budgetCents, totalCents: 0, columns: [] }
-  const rows = db.prepare(`SELECT t.id, t.account_id AS accountId, a.name AS account, pr.name AS owner, pr.kind AS ownerKind, t.posted_date AS date, t.description, c.name AS category, -t.amount_cents AS cents
-    FROM txn t JOIN account a ON a.id = t.account_id JOIN profile pr ON pr.id = t.profile_id LEFT JOIN category c ON c.id = t.category_id
+  const rows = db.prepare(`SELECT t.id, t.account_id AS accountId, a.name AS account, pr.name AS owner, pr.kind AS ownerKind, t.posted_date AS date, t.description, CASE WHEN pc.name IS NULL THEN c.name ELSE pc.name || ' › ' || c.name END AS category, -t.amount_cents AS cents
+    FROM txn t JOIN account a ON a.id = t.account_id JOIN profile pr ON pr.id = t.profile_id LEFT JOIN category c ON c.id = t.category_id LEFT JOIN category pc ON pc.id = c.parent_id
     WHERE t.kind IN ('expense','refund') AND t.category_id IN (${categoryIds.map(() => '?').join(',')}) AND t.posted_date BETWEEN ? AND ?
     ORDER BY t.posted_date DESC, t.id DESC`).all(...categoryIds, monthStart(month), monthEnd(month)) as (DrillRow & { account: string; owner: string; ownerKind: string })[]
   const cols = new Map<number, DrillColumn & { all: DrillRow[] }>()
@@ -42,7 +46,7 @@ export function householdBudgetDrill(db: Db, budgetId: number, month: string): B
   const b = listHouseholdBudgets(db).find((x) => x.id === budgetId)
   if (!b) throw new Error('That budget no longer exists. Reload the page.')
   const ids = listOwners(db).map((o) => o.profileId)
-  const cats = db.prepare(`SELECT id, name, group_name AS groupName FROM category WHERE profile_id IN (${ids.map(() => '?').join(',')})`).all(...ids) as { id: number; name: string; groupName: string | null }[]
+  const cats = db.prepare(`SELECT c.id, COALESCE(pc.name, c.name) AS name, COALESCE(pc.group_name, c.group_name) AS groupName FROM category c LEFT JOIN category pc ON pc.id = c.parent_id WHERE c.profile_id IN (${ids.map(() => '?').join(',')})`).all(...ids) as { id: number; name: string; groupName: string | null }[]
   const covered = new Set(b.groups)
   return build(db, b.name, month, b.monthlyCents, cats.filter((c) => covered.has(groupOf(c))).map((c) => c.id))
 }

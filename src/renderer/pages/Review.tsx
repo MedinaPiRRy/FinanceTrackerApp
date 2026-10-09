@@ -38,6 +38,9 @@ function DecisionForm({ moneyIn, name, accounts, excludeAccountId, categories, p
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [newName, setNewName] = useState('')
+  const [debts, setDebts] = useState<{ id: number; name: string }[]>([])
+  const [debtId, setDebtId] = useState('')
+  useEffect(() => { void api('debts', profileId).then((d) => setDebts(d.map((x) => ({ id: x.id, name: x.name })))).catch(() => setDebts([])) }, [profileId])
 
   const options: { value: Choice; label: string }[] = moneyIn
     ? [{ value: 'income', label: 'Income (earned or received)' }, { value: 'refund', label: 'Reimbursement or refund (reduces spending)' }, ...(partner ? [{ value: 'between_us' as Choice, label: `Between us (money from ${partner.name})` }] : []), { value: 'transfer', label: 'Transfer between my own or shared accounts' }, { value: 'keep', label: 'Keep as is (excluded from income and spending)' }]
@@ -64,7 +67,8 @@ function DecisionForm({ moneyIn, name, accounts, excludeAccountId, categories, p
       if (choice === 'between_us') decision = { kind: 'between_us', partnerProfileId: partner!.id, note: note || undefined }
       else if (choice === 'transfer') decision = { kind: 'transfer', counterAccountId: counter ? Number(counter) : undefined, note: note || undefined }
       else if (choice === 'keep') decision = { kind: 'keep', note: note || undefined }
-      else decision = { kind: choice as 'income' | 'expense' | 'refund', categoryId: Number(categoryId), note: note || undefined }
+      else if (choice === 'expense') decision = { kind: 'expense', categoryId: Number(categoryId), note: note || undefined, debtId: debtId ? Number(debtId) : undefined }
+      else decision = { kind: choice as 'income' | 'refund', categoryId: Number(categoryId), note: note || undefined }
       await onSubmit(decision, canRemember && remember)
     } catch (e) {
       setError((e as Error).message)
@@ -77,14 +81,14 @@ function DecisionForm({ moneyIn, name, accounts, excludeAccountId, categories, p
       <ErrorBox error={error} />
       <div className="row">
         <label className="field">This is…
-          <select value={choice} onChange={(e) => { setChoice(e.target.value as Choice); setCategoryId('') }}>
+          <select value={choice} onChange={(e) => { setChoice(e.target.value as Choice); setCategoryId(''); setDebtId('') }}>
             <option value="">Choose…</option>
             {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </label>
         {needsCategory && (
           <label className="field">Category
-            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}><option value="">Choose…</option>{cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}><option value="">Choose…</option>{cats.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
           </label>
         )}
         {needsCategory && (
@@ -93,6 +97,11 @@ function DecisionForm({ moneyIn, name, accounts, excludeAccountId, categories, p
               <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={choice === 'income' ? 'e.g. Gifts' : 'e.g. Loans to friends'} style={{ width: 160 }} />
               <button className="btn" type="button" disabled={!newName.trim()} onClick={() => void createCat()}>Add</button>
             </span>
+          </label>
+        )}
+        {choice === 'expense' && debts.length > 0 && (
+          <label className="field">Counts toward a loan I track (optional)
+            <select value={debtId} onChange={(e) => setDebtId(e.target.value)}><option value="">No, just an expense</option>{debts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
           </label>
         )}
         {choice === 'transfer' && excludeAccountId !== undefined && (

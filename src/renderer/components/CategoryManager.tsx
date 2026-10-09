@@ -12,6 +12,8 @@ export function CategoryManager({ profileId, onChanged }: { profileId: number; o
   const [budgets, setBudgets] = useState<BudgetRow[]>([])
   const [kind, setKind] = useState<Kind>('expense')
   const [newName, setNewName] = useState('')
+  const [newParent, setNewParent] = useState('')
+  const [moving, setMoving] = useState<number | null>(null)
   const [editing, setEditing] = useState<number | null>(null)
   const [editName, setEditName] = useState('')
   const [deleting, setDeleting] = useState<number | null>(null)
@@ -31,24 +33,26 @@ export function CategoryManager({ profileId, onChanged }: { profileId: number; o
 
   const shown = (rows ?? []).filter((c) => c.kind === kind)
   const deletingRow = rows?.find((c) => c.id === deleting)
-  const targets = (rows ?? []).filter((c) => c.kind === kind && c.id !== deleting)
+  const mains = (rows ?? []).filter((c) => c.kind === kind && c.parentId === null)
+  const targets = (rows ?? []).filter((c) => c.kind === kind && c.id !== deleting && !(deletingRow && c.parentId === deletingRow.id))
   const inUse = (c: CategoryRow) => c.txnCount + c.goalCount > 0
 
   return (
     <Card>
       <div className="card-head"><h2>Categories</h2><Segmented<Kind> small label="Kind of category" value={kind} onChange={(k) => { setKind(k); setEditing(null); setDeleting(null) }} options={[{ value: 'expense', label: 'Spending' }, { value: 'income', label: 'Income' }]} /></div>
-      <p className="sub" style={{ marginTop: 0 }}>The categories your transactions are filed under. Rename one and every transaction follows. {kind === 'expense' ? 'Choose which budget a category counts toward (a category is in at most one).' : 'Income categories are not part of budgets.'}</p>
+      <p className="sub" style={{ marginTop: 0 }}>The categories your transactions are filed under. Rename one and every transaction follows. A subcategory (like Gas under Gas & Transportation) counts toward its main category in budgets and charts, and you still see it on its own. {kind === 'expense' ? 'Choose which budget a category counts toward (a category is in at most one).' : 'Income categories are not part of budgets.'}</p>
       <ErrorBox error={error} />
       {msg && <div className="notice" role="status">{msg}</div>}
 
       <div className="filters">
-        <label className="field">New {kind === 'expense' ? 'spending' : 'income'} category<input value={newName} maxLength={60} onChange={(e) => setNewName(e.target.value)} placeholder={kind === 'expense' ? 'e.g. Pets' : 'e.g. Side job'} style={{ width: 220 }} onKeyDown={(e) => { if (e.key === 'Enter' && newName.trim()) void run(async () => { await api('createCategory', profileId, newName, kind); setNewName('') }, 'Category added.') }} /></label>
-        <button className="btn primary" disabled={!newName.trim()} onClick={() => void run(async () => { await api('createCategory', profileId, newName, kind); setNewName('') }, 'Category added.')}>Add</button>
+        <label className="field">New {kind === 'expense' ? 'spending' : 'income'} category<input value={newName} maxLength={60} onChange={(e) => setNewName(e.target.value)} placeholder={kind === 'expense' ? 'e.g. Pets' : 'e.g. Side job'} style={{ width: 220 }} onKeyDown={(e) => { if (e.key === 'Enter' && newName.trim()) void run(async () => { await api('createCategory', profileId, newName, kind, newParent ? Number(newParent) : null); setNewName('') }, 'Category added.') }} /></label>
+        <label className="field">Under<select value={newParent} onChange={(e) => setNewParent(e.target.value)}><option value="">Nothing (a main category)</option>{mains.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+        <button className="btn primary" disabled={!newName.trim()} onClick={() => void run(async () => { await api('createCategory', profileId, newName, kind, newParent ? Number(newParent) : null); setNewName('') }, 'Category added.')}>Add</button>
       </div>
 
       {rows === null ? <p className="muted">Loading…</p> : shown.length === 0 ? <p className="muted">No {kind === 'expense' ? 'spending' : 'income'} categories yet.</p> : (
         <div className="table-wrap"><table>
-          <thead><tr><th>Name</th><th className="r">Transactions</th>{kind === 'expense' && <th>Budget</th>}<th></th></tr></thead>
+          <thead><tr><th>Name</th><th className="r">Transactions</th>{kind === 'expense' && <th>Budget</th>}{kind === 'expense' && <th>Counts as</th>}<th></th></tr></thead>
           <tbody>
             {shown.map((c) => (
               <tr key={c.id}>
@@ -59,7 +63,7 @@ export function CategoryManager({ profileId, onChanged }: { profileId: number; o
                       <button className="btn small primary" onClick={() => void run(async () => { await api('categoryRename', profileId, c.id, editName); setEditing(null) }, 'Renamed.')}>Save</button>
                       <button className="btn small" onClick={() => setEditing(null)}>Cancel</button>
                     </span>
-                  ) : c.name}
+                  ) : <span style={{ paddingLeft: c.parentId ? 20 : 0 }}>{c.parentId ? '↳ ' : ''}{c.name}</span>}
                   {(c.ruleCount > 0 || c.goalCount > 0) && editing !== c.id && <div className="muted" style={{ fontSize: 12 }}>{[c.ruleCount > 0 ? `${c.ruleCount} remembered name${c.ruleCount === 1 ? '' : 's'}` : '', c.goalCount > 0 ? `${c.goalCount} goal${c.goalCount === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')}</div>}
                 </td>
                 <td className="r num">{c.txnCount.toLocaleString()}</td>
@@ -71,8 +75,23 @@ export function CategoryManager({ profileId, onChanged }: { profileId: number; o
                     </select>
                   </td>
                 )}
+                {kind === 'expense' && (
+                  <td>
+                    <select aria-label={`Counts as, for ${c.name}`} value={c.purpose ?? ''} onChange={(e) => void run(() => api('categorySetPurpose', profileId, c.id, e.target.value ? (e.target.value as 'tax' | 'interest' | 'none') : null), 'Updated.')}>
+                      <option value="">{c.effectivePurpose === 'none' ? 'Ordinary spending' : `Auto: ${c.effectivePurpose === 'tax' ? 'Taxes' : 'Interest'}`}</option>
+                      <option value="tax">Taxes</option><option value="interest">Interest</option><option value="none">Neither</option>
+                    </select>
+                  </td>
+                )}
                 <td className="r" style={{ whiteSpace: 'nowrap' }}>
                   <button className="btn small" aria-label={`Rename ${c.name}`} onClick={() => { setEditing(c.id); setEditName(c.name); setDeleting(null) }}>Rename</button>{' '}
+                  {moving === c.id ? (
+                    <select autoFocus aria-label={`Move ${c.name} under`} defaultValue="" onChange={(e) => void run(async () => { await api('categorySetParent', profileId, c.id, e.target.value === 'none' ? null : Number(e.target.value)); setMoving(null) }, 'Moved.')} onBlur={() => setMoving(null)}>
+                      <option value="" disabled>Move under…</option>
+                      {c.parentId !== null && <option value="none">Make it a main category</option>}
+                      {mains.filter((m) => m.id !== c.id && m.id !== c.parentId).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    </select>
+                  ) : <><button className="btn small" aria-label={`Move ${c.name}`} onClick={() => setMoving(c.id)}>Move</button>{' '}</>}
                   <button className="btn small danger" aria-label={`Delete ${c.name}`} onClick={() => { setDeleting(c.id); setMoveTo(''); setEditing(null) }}>Delete</button>
                 </td>
               </tr>

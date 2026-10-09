@@ -50,7 +50,7 @@ export function getMonthlyReview(db: Db, profileId: number, month: string | unde
     .sort((a, b) => Math.abs(b.deltaCents) - Math.abs(a.deltaCents))
     .slice(0, 8)
 
-  const top = db.prepare(`SELECT t.id, t.account_id AS accountId, t.posted_date AS date, t.description, c.name AS category, -t.amount_cents AS cents FROM txn t LEFT JOIN category c ON c.id = t.category_id WHERE t.profile_id = ? AND t.kind = 'expense' AND t.posted_date BETWEEN ? AND ?
+  const top = db.prepare(`SELECT t.id, t.account_id AS accountId, t.posted_date AS date, t.description, CASE WHEN pc.name IS NULL THEN c.name ELSE pc.name || ' › ' || c.name END AS category, -t.amount_cents AS cents FROM txn t LEFT JOIN category c ON c.id = t.category_id LEFT JOIN category pc ON pc.id = c.parent_id WHERE t.profile_id = ? AND t.kind = 'expense' AND t.posted_date BETWEEN ? AND ?
     AND NOT EXISTS (SELECT 1 FROM txn r WHERE r.kind = 'refund' AND r.account_id = t.account_id AND r.category_id IS t.category_id AND r.amount_cents = -t.amount_cents AND ABS(julianday(r.posted_date) - julianday(t.posted_date)) <= 7) ORDER BY t.amount_cents ASC LIMIT 10`).all(profileId, monthStart(m), monthEnd(m)) as Dashboard['largestExpenses']
 
   const monthTxns = db.prepare(`SELECT t.posted_date AS date, t.amount_cents AS cents, t.description, a.name AS account FROM txn t JOIN account a ON a.id = t.account_id WHERE t.profile_id = ? AND t.kind = 'expense' AND t.posted_date BETWEEN ? AND ?`).all(profileId, monthStart(m), monthEnd(m)) as { date: string; cents: number; description: string; account: string }[]

@@ -41,6 +41,10 @@ from income and spending until the user decides. Decisions are remembered as rul
 
 **Settings.** Names, the start page, the "older" cut-off and automatic backups live in the `setting` table (so they travel with a backup). The category and account managers refuse to leave anything dangling: deleting a used category or an account with transactions needs somewhere to move them (or a typed confirmation), and a backup is made first. Moving between "just me", "me and my partner" and "plus a shared household" adds people safely; removing one deletes their data (backup first, typed confirmation) and turns money that moved between them and someone else into items to review. "Delete the app" erases the data and then hands off to the platform's uninstaller (only the installed app can do that; the dev server cannot).
 
+**Loans.** A payment can be linked to a tracked loan (`debt_payment`). Linking records a new balance in the loan's history on the payment's date (nothing is guessed about interest); a payment dated on or before the loan's balance date is already part of it and only gets the link. "Always do this" can carry the loan, so later payments count automatically.
+
+**Balances.** An account's balance is its starting balance plus every transaction, so a mismatch with the bank is either missing/duplicated transactions or a wrong starting balance. `accountChecks.ts` offers both fixes: set the starting balance to match the bank (warning when that would mean a card started with a credit), and find accounts that hold the same rows (matched by date and amount, only in months where almost every row of the smaller account has a twin).
+
 **Back and forward.** `renderer/nav.tsx` keeps a history of visited pages. Each visit has an id, and pages keep their filters, month and tab with `useKept`, stored under that id, so Back returns to the page as it was left.
 
 **Reversed charges.** `core/offsets.ts` pairs a charge with a refund of the same amount, account and category within a week (a monthly fee and its rebate). Such pairs are not suggested as bills, not counted as tracked costs, and not shown as unusual purchases.
@@ -80,6 +84,26 @@ transactions are already converted by the bank.
 
 **Safe upgrades.** The schema version lives in `PRAGMA user_version`. Before any migration the database file is copied
 next to itself, and a migration that would drop a table containing rows refuses to run.
+
+**Subcategories.** `category.parent_id` allows one level: a main category and its children, of the same kind. Everything that
+adds spending up (dashboard, budgets, forecast, household groups, goals, the workbook sync) groups by the main category
+(`COALESCE(parent.name, name)`); a subcategory with a budget of its own is counted there instead. Pickers show
+"Main › Sub" (`CategoryInfo.label`).
+
+**Rules by amount.** `amount_rule` (merchant words, a limit, a category for "up to" and one for "more than") is checked in
+`buildPreview` before any guess, matches whole words in the cleaned merchant name, and only looks at money going out.
+`applyAmountRule` files rows still waiting for a category, optionally re-files automatic guesses, and never touches rows the
+person filed or rows that come from a workbook.
+
+**Taxes and interest.** Interest is found from the words of a money-out transaction ("interest", not a reversal or refund);
+taxes are categories marked as such (`category.purpose`, guessed from the name until the person chooses). A fee that the bank
+gave straight back is excluded.
+
+**Net worth.** Accounts (non-card, non-archived; investments use their last valuation) + things added by hand (`asset`, with a
+value history in `asset_value`) minus card/loan balances and tracked debts.
+
+**Pending charges.** The app only holds posted transactions, so matching a bank balance uses the posted balance; an optional
+pending amount is shown as "after pending" and never written.
 
 ## Testing
 

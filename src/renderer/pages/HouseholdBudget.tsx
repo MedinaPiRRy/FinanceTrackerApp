@@ -140,7 +140,7 @@ export function HouseholdBudget({ onChanged, goto, preset }: { preset?: TxnPrese
         <Card className="stat"><div className="label">Over budget</div><div className={`value num ${over ? 'neg' : ''}`}>{over} of {report.lines.length}</div></Card>
       </div>
 
-      <ReviewNotice profileId={null} goto={goto} />
+      <ReviewNotice profileId={null} month={month} goto={goto} />
       {drillId !== null && <BudgetDrill load={drillLoad} goto={goto} onClose={() => setDrillId(null)} />}
       <Card>
         {report.lines.length === 0 ? <p className="muted">No household budgets yet. Add one to track a category group for both of you together.</p> : (

@@ -75,7 +75,15 @@ export interface BudgetReport {
 /** Spending per category for a month: expenses minus refunds (transfers and unreviewed rows never count). */
 export function spendByCategory(db: Db, profileId: number, month: string): Map<number, number> {
   const rows = db.prepare(`SELECT category_id AS c, SUM(-amount_cents) AS s FROM txn WHERE profile_id = ? AND kind IN ('expense','refund') AND category_id IS NOT NULL AND posted_date BETWEEN ? AND ? GROUP BY category_id`).all(profileId, monthStart(month), monthEnd(month)) as { c: number; s: number }[]
-  return new Map(rows.map((r) => [r.c, r.s]))
+  // a subcategory counts toward its main category's budget, unless it has a budget of its own
+  const parent = new Map((db.prepare('SELECT id, parent_id AS p FROM category WHERE profile_id = ? AND parent_id IS NOT NULL').all(profileId) as { id: number; p: number }[]).map((r) => [r.id, r.p]))
+  const own = new Set((db.prepare('SELECT bc.category_id AS c FROM budget_category bc JOIN budget b ON b.id = bc.budget_id WHERE b.profile_id = ?').all(profileId) as { c: number }[]).map((r) => r.c))
+  const out = new Map<number, number>()
+  for (const r of rows) {
+    const id = parent.has(r.c) && !own.has(r.c) ? parent.get(r.c)! : r.c
+    out.set(id, (out.get(id) ?? 0) + r.s)
+  }
+  return out
 }
 
 export function budgetReport(db: Db, profileId: number, month: string, today: string): BudgetReport {

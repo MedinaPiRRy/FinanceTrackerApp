@@ -23,6 +23,8 @@ export function HouseholdDashboard({ goto }: { goto: (p: Page, preset?: TxnPrese
   const [data, setData] = useState<HouseholdOverview | null | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => { api('householdOverview', month).then(setData).catch((e: Error) => setError(e.message)) }, [month])
+  const [netWorth, setNetWorth] = useState<number | null>(null)
+  useEffect(() => { void api('netWorth', null).then((n) => setNetWorth(n.netWorthCents)).catch(() => setNetWorth(null)) }, [])
 
   const series = useMemo(() => {
     if (!data) return []
@@ -83,7 +85,7 @@ export function HouseholdDashboard({ goto }: { goto: (p: Page, preset?: TxnPrese
         <label className="field">Month<select value={data.month} onChange={(e) => setMonth(e.target.value)} aria-label="Select month">{[...data.availableMonths].reverse().map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select></label>
       </div>
 
-      <ReviewNotice profileId={null} goto={goto} />
+      <ReviewNotice profileId={null} month={data.month} goto={goto} />
       {data.pendingReview > 0 && <div className="banner"><span>{data.pendingReview} transactions across your finances are waiting for review. Until then they are not counted as income or spending.</span></div>}
 
       <div className="grid stats">
@@ -91,6 +93,7 @@ export function HouseholdDashboard({ goto }: { goto: (p: Page, preset?: TxnPrese
         <Stat label="Combined spending" value={formatCents(c.expenseCents)} hint="After refunds, excluding transfers" onClick={() => go({ kind: 'expense,refund' })} title="See the money that went out" />
         <Stat label="Net together" value={formatCents(c.netCents, { sign: true })} tone={c.netCents < 0 ? 'neg' : 'pos'} hint={`Savings rate ${pct(c.savingsRate)}`} onClick={() => go({ kind: 'income,expense,refund' })} title="See all the income and spending" />
         <Stat label="Money in accounts" value={formatCents(data.money.assetsCents)} hint={`Owed: ${formatCents(data.money.owedCardsCents)} on cards${data.money.otherDebtCents ? ` + ${formatCents(data.money.otherDebtCents)} in loans` : ''}`} onClick={() => goto('accounts')} title="Open the accounts" />
+        {netWorth !== null && <Stat label="Net worth" value={formatCents(netWorth)} tone={netWorth < 0 ? 'neg' : undefined} hint="Accounts + what you own − what you owe" onClick={() => goto('accounts')} title="Add a house, car or investments" />}
       </div>
 
       <Card>

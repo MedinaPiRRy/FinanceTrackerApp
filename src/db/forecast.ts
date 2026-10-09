@@ -76,8 +76,8 @@ export function getForecast(db: Db, profileId: number, today: string, opts: { mo
   const trackedIncome = tracked.filter((t) => t.direction === 'income')
   for (const t of trackedIncome) income.push({ id: `inc:${t.id}`, label: t.name, kind: 'regular', monthlyCents: monthlyOf(t), lowCents: monthlyOf(t), highCents: monthlyOf(t) })
 
-  const incomeRows = incomeMonths.length === 0 ? [] : db.prepare(`SELECT t.posted_date AS date, t.amount_cents AS cents, COALESCE(c.name, 'Other income') AS category, COALESCE(t.description_raw, t.description) AS text
-    FROM txn t LEFT JOIN category c ON c.id = t.category_id WHERE t.profile_id IN (${marks}) AND t.kind = 'income' AND t.posted_date BETWEEN ? AND ?`).all(...ids, monthStart(incomeMonths[0]!), monthEnd(incomeMonths[incomeMonths.length - 1]!)) as { date: string; cents: number; category: string; text: string }[]
+  const incomeRows = incomeMonths.length === 0 ? [] : db.prepare(`SELECT t.posted_date AS date, t.amount_cents AS cents, COALESCE(pc.name, c.name, 'Other income') AS category, COALESCE(t.description_raw, t.description) AS text
+    FROM txn t LEFT JOIN category c ON c.id = t.category_id LEFT JOIN category pc ON pc.id = c.parent_id WHERE t.profile_id IN (${marks}) AND t.kind = 'income' AND t.posted_date BETWEEN ? AND ?`).all(...ids, monthStart(incomeMonths[0]!), monthEnd(incomeMonths[incomeMonths.length - 1]!)) as { date: string; cents: number; category: string; text: string }[]
   const byCat = new Map<string, number[]>()
   for (const r of incomeRows) {
     const key = normalizeKey(r.text)
@@ -98,8 +98,8 @@ export function getForecast(db: Db, profileId: number, today: string, opts: { mo
 
   // ---- spending: tracked bills + everyday spending by category (average of the last three complete months) ----
   const bills: ExpenseLine[] = tracked.filter((t) => t.direction === 'expense' && t.counts).map((t) => ({ id: `bill:${t.id}`, label: t.name, kind: 'bill' as const, monthlyCents: monthlyOf(t) }))
-  const spendRows = spendMonths.length === 0 ? [] : db.prepare(`SELECT t.posted_date AS date, t.amount_cents AS cents, t.kind, COALESCE(c.name, 'Uncategorized') AS category, COALESCE(t.description_raw, t.description) AS text
-    FROM txn t LEFT JOIN category c ON c.id = t.category_id WHERE t.profile_id IN (${marks}) AND t.kind IN ('expense','refund') AND t.posted_date BETWEEN ? AND ?`).all(...ids, monthStart(spendMonths[0]!), monthEnd(spendMonths[spendMonths.length - 1]!)) as { date: string; cents: number; kind: string; category: string; text: string }[]
+  const spendRows = spendMonths.length === 0 ? [] : db.prepare(`SELECT t.posted_date AS date, t.amount_cents AS cents, t.kind, COALESCE(pc.name, c.name, 'Uncategorized') AS category, COALESCE(t.description_raw, t.description) AS text
+    FROM txn t LEFT JOIN category c ON c.id = t.category_id LEFT JOIN category pc ON pc.id = c.parent_id WHERE t.profile_id IN (${marks}) AND t.kind IN ('expense','refund') AND t.posted_date BETWEEN ? AND ?`).all(...ids, monthStart(spendMonths[0]!), monthEnd(spendMonths[spendMonths.length - 1]!)) as { date: string; cents: number; kind: string; category: string; text: string }[]
   const catTotal = new Map<string, number>()
   for (const r of spendRows) catTotal.set(r.category, (catTotal.get(r.category) ?? 0) - r.cents)
   const catAvg = new Map([...catTotal].map(([k, v]) => [k, Math.max(0, Math.round(v / Math.max(1, spendMonths.length)))]))
@@ -125,7 +125,7 @@ export function getForecast(db: Db, profileId: number, today: string, opts: { mo
       const hit = spendRows.filter((r) => r.kind === 'expense' && keysOf(b).some((k) => sameMerchant(normalizeKey(r.text), k))).sort((x, y) => y.date.localeCompare(x.date))[0]
       if (hit) matchedBillByCat.set(hit.category, (matchedBillByCat.get(hit.category) ?? 0) + monthlyOf(b))
     }
-    const names = new Map((db.prepare('SELECT id, name FROM category WHERE profile_id = ?').all(ids[0]!) as { id: number; name: string }[]).map((c) => [c.id, c.name]))
+    const names = new Map((db.prepare('SELECT c.id, COALESCE(pc.name, c.name) AS name FROM category c LEFT JOIN category pc ON pc.id = c.parent_id WHERE c.profile_id = ?').all(ids[0]!) as { id: number; name: string }[]).map((c) => [c.id, c.name]))
     for (const b of listBudgets(db, ids[0]!)) {
       const cats = b.categoryIds.map((id) => names.get(id)!).filter(Boolean)
       const everyday = planEveryday.filter((e) => cats.includes(e.id.slice(4)))

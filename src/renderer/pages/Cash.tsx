@@ -65,7 +65,7 @@ export function Cash({ profile, accounts, categories, onChanged }: { profile: Pr
           <label className="field">Amount ($)<input type="number" min="0" step="0.01" value={spendAmount} onChange={(e) => setSpendAmount(e.target.value)} style={{ width: 110 }} /></label>
           <label className="field" style={{ flex: 1, minWidth: 160 }}>What for<input value={spendWhat} onChange={(e) => setSpendWhat(e.target.value)} placeholder="e.g. Lunch with friends" /></label>
           <label className="field">Category
-            <select value={spendCat} onChange={(e) => setSpendCat(e.target.value)}><option value="">Choose…</option>{expenseCats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+            <select value={spendCat} onChange={(e) => setSpendCat(e.target.value)}><option value="">Choose…</option>{expenseCats.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
           </label>
           <label className="field">Or a new category
             <span style={{ display: 'flex', gap: 6 }}>
@@ -120,7 +120,7 @@ export function Cash({ profile, accounts, categories, onChanged }: { profile: Pr
                 <tr key={b.id}>
                   <td>{b.name}<div className="muted">{b.frequency}</div></td>
                   <td className="r num">{formatCents(b.amountCents)}</td>
-                  <td><select className="cat-select" aria-label={`Category for ${b.name}`} value={billCat[b.id] ?? ''} onChange={(e) => setBillCat({ ...billCat, [b.id]: e.target.value })}><option value="">Choose…</option>{expenseCats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></td>
+                  <td><select className="cat-select" aria-label={`Category for ${b.name}`} value={billCat[b.id] ?? ''} onChange={(e) => setBillCat({ ...billCat, [b.id]: e.target.value })}><option value="">Choose…</option>{expenseCats.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select></td>
                   <td className="r"><button className="btn small primary" disabled={!billCat[b.id]} onClick={() => void run(() => api('recordCashBill', profile.id, b.id, billDate, Number(billCat[b.id])), `${b.name} recorded`)}>Record payment</button></td>
                 </tr>
               ))}

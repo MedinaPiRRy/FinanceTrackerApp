@@ -59,7 +59,7 @@ export function Insights({ profile, categories, goto, openId }: { profile: Profi
         {data.availableMonths.length > 0 && <label className="field">Month<select value={month} onChange={(e) => { setMonth(e.target.value); setOpen(null); setEvidence({}) }}>{[...data.availableMonths].reverse().map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select></label>}
       </div>
       <ErrorBox error={error} />
-      <ReviewNotice profileId={profile.id} goto={goto} />
+      <ReviewNotice profileId={profile.id} month={data.month ?? undefined} goto={goto} />
       <div className="chips" role="group" aria-label="Filter insights" style={{ marginBottom: 12 }}>
         {FILTERS.map((f) => <button key={f.id} className={`btn small ${filter === f.id ? 'primary' : ''}`} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label} ({data.insights.filter((i) => matches(i, f.id)).length})</button>)}
       </div>

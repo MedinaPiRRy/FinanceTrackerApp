@@ -18,6 +18,7 @@ import { Recurring } from './pages/Recurring'
 import { Settings } from './pages/Misc'
 import { Welcome } from './pages/Welcome'
 import { Insights } from './pages/Insights'
+import { Costs } from './pages/Costs'
 import { Forecast } from './pages/Forecast'
 import { InsightBanner } from './components/InsightBanner'
 import { HouseholdDashboard } from './pages/HouseholdDashboard'
@@ -27,7 +28,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import type { AccountInfo, CategoryInfo, Profile } from '../db/queries'
 import type { Owner } from '../db/household'
 
-export type Page = 'dashboard' | 'monthly' | 'transactions' | 'import' | 'review' | 'accounts' | 'cash' | 'recurring' | 'insights' | 'forecast' | 'budget' | 'goals' | 'settings'
+export type Page = 'dashboard' | 'monthly' | 'transactions' | 'import' | 'review' | 'accounts' | 'cash' | 'recurring' | 'insights' | 'costs' | 'forecast' | 'budget' | 'goals' | 'settings'
 const EMPTY_PRESET: TxnPreset = {}
 export interface TxnPreset { insightId?: string; text?: string; accountId?: number; categoryId?: number; from?: string; to?: string; reviewOnly?: boolean; reviewTab?: string; txnId?: number; kind?: string; month?: string; personId?: number; groupName?: string }
 
@@ -41,7 +42,8 @@ const NAV: { page: Page; label: string; icon: string }[][] = [
     { page: 'review', label: 'Review', icon: '✓' },
     { page: 'accounts', label: 'Accounts', icon: '▣' },
     { page: 'cash', label: 'Cash & tips', icon: '$' },
-    { page: 'recurring', label: 'Recurring', icon: '↻' }
+    { page: 'recurring', label: 'Recurring', icon: '↻' },
+    { page: 'costs', label: 'Taxes & interest', icon: '%' }
   ],
   [
     { page: 'budget', label: 'Budget', icon: '◔' },
@@ -57,7 +59,8 @@ const HOUSEHOLD_NAV: { page: Page; label: string; icon: string }[][] = [
     { page: 'transactions', label: 'Transactions', icon: '☰' },
     { page: 'import', label: 'Import (shared)', icon: '⇪' },
     { page: 'review', label: 'Review (shared)', icon: '✓' },
-    { page: 'accounts', label: 'Accounts', icon: '▣' }
+    { page: 'accounts', label: 'Accounts', icon: '▣' },
+    { page: 'costs', label: 'Taxes & interest', icon: '%' }
   ],
   [
     { page: 'budget', label: 'Budget', icon: '◔' },
@@ -220,6 +223,7 @@ function Shell() {
               {page === 'import' && <Import profile={profile} accounts={accounts} categories={categories} onChanged={changed} goto={goto} partner={null} />}
               {page === 'review' && <Review profile={profile} goto={goto} preset={preset} accounts={accounts} categories={categories} onChanged={changed} partner={null} />}
               {page === 'accounts' && <Accounts profile={profile} household goto={goto} onChanged={changed} />}
+              {page === 'costs' && <Costs profile={profile} household goto={goto} />}
               {page === 'budget' && <HouseholdBudget onChanged={changed} goto={goto} preset={preset} />}
               {page === 'forecast' && <Forecast profile={profile} goto={goto} />}
               {page === 'goals' && <HouseholdGoals profile={profile} accounts={allAccounts} categories={categories} goto={goto} />}
@@ -235,6 +239,7 @@ function Shell() {
               {page === 'cash' && <Cash profile={profile} accounts={accounts} categories={categories} onChanged={changed} />}
               {page === 'insights' && <Insights profile={profile} categories={categories} goto={goto} openId={preset.insightId} />}
               {page === 'recurring' && <Recurring profile={profile} accounts={accounts} onChanged={changed} />}
+              {page === 'costs' && <Costs profile={profile} goto={goto} />}
               {page === 'monthly' && <MonthlyReview profile={profile} goto={goto} categories={categories} />}
               {page === 'budget' && <Budget profile={profile} categories={categories} goto={goto} onChanged={changed} preset={preset} />}
               {page === 'forecast' && <Forecast profile={profile} goto={goto} />}

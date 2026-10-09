@@ -22,7 +22,7 @@ export function listOwners(db: Db): Owner[] {
 export interface CategoryGroupRow { id: number; profileId: number; owner: string; name: string; kind: 'expense' | 'income'; group: string; overridden: boolean }
 
 export function listCategoryGroups(db: Db): CategoryGroupRow[] {
-  const rows = db.prepare(`SELECT c.id, c.profile_id AS profileId, p.name AS owner, c.name, c.kind, c.group_name AS groupName FROM category c JOIN profile p ON p.id = c.profile_id WHERE c.kind = 'expense' ORDER BY p.kind = 'household', p.id, c.name`).all() as { id: number; profileId: number; owner: string; name: string; kind: 'expense'; groupName: string | null }[]
+  const rows = db.prepare(`SELECT c.id, c.profile_id AS profileId, p.name AS owner, c.name, c.kind, c.group_name AS groupName FROM category c JOIN profile p ON p.id = c.profile_id WHERE c.kind = 'expense' AND c.parent_id IS NULL ORDER BY p.kind = 'household', p.id, c.name`).all() as { id: number; profileId: number; owner: string; name: string; kind: 'expense'; groupName: string | null }[]
   return rows.map((r) => ({ id: r.id, profileId: r.profileId, owner: r.owner, name: r.name, kind: r.kind, group: groupOf({ name: r.name, groupName: r.groupName }), overridden: !!r.groupName?.trim() }))
 }
 
@@ -55,7 +55,7 @@ export function listGroupNames(db: Db): string[] {
 interface Row { owner: number; date: string; cents: number; kind: 'income' | 'expense' | 'refund'; group: string | null }
 
 function loadRows(db: Db): Row[] {
-  const rows = db.prepare(`SELECT t.profile_id AS owner, t.posted_date AS date, t.amount_cents AS cents, t.kind, c.name AS cname, c.group_name AS gname FROM txn t LEFT JOIN category c ON c.id = t.category_id WHERE t.kind IN ('income','expense','refund')`).all() as { owner: number; date: string; cents: number; kind: 'income' | 'expense' | 'refund'; cname: string | null; gname: string | null }[]
+  const rows = db.prepare(`SELECT t.profile_id AS owner, t.posted_date AS date, t.amount_cents AS cents, t.kind, COALESCE(pc.name, c.name) AS cname, COALESCE(pc.group_name, c.group_name) AS gname FROM txn t LEFT JOIN category c ON c.id = t.category_id LEFT JOIN category pc ON pc.id = c.parent_id WHERE t.kind IN ('income','expense','refund')`).all() as { owner: number; date: string; cents: number; kind: 'income' | 'expense' | 'refund'; cname: string | null; gname: string | null }[]
   return rows.map((r) => ({ owner: r.owner, date: r.date, cents: r.cents, kind: r.kind, group: r.kind === 'income' ? null : r.cname ? groupOf({ name: r.cname, groupName: r.gname }) : 'Uncategorized' }))
 }
 
@@ -224,7 +224,7 @@ export interface HouseholdBudgetReport {
 /** Spending (expenses minus refunds) by owner for a month, per category group. */
 export function spendByGroup(db: Db, month: string): Map<string, Map<number, number>> {
   const out = new Map<string, Map<number, number>>()
-  const rows = db.prepare(`SELECT t.profile_id AS owner, t.amount_cents AS cents, c.name AS cname, c.group_name AS gname FROM txn t LEFT JOIN category c ON c.id = t.category_id WHERE t.kind IN ('expense','refund') AND t.posted_date BETWEEN ? AND ?`).all(monthStart(month), monthEnd(month)) as { owner: number; cents: number; cname: string | null; gname: string | null }[]
+  const rows = db.prepare(`SELECT t.profile_id AS owner, t.amount_cents AS cents, COALESCE(pc.name, c.name) AS cname, COALESCE(pc.group_name, c.group_name) AS gname FROM txn t LEFT JOIN category c ON c.id = t.category_id LEFT JOIN category pc ON pc.id = c.parent_id WHERE t.kind IN ('expense','refund') AND t.posted_date BETWEEN ? AND ?`).all(monthStart(month), monthEnd(month)) as { owner: number; cents: number; cname: string | null; gname: string | null }[]
   for (const r of rows) {
     const g = r.cname ? groupOf({ name: r.cname, groupName: r.gname }) : 'Uncategorized'
     const m = out.get(g) ?? new Map<number, number>()

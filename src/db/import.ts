@@ -5,6 +5,8 @@ import { pairTransfers } from './transfers'
 import { rememberCategory } from './rules'
 import { rememberLastAccount } from './importMatch'
 import { findSourceRule, directionOf } from './sourceRules'
+import { loadAmountMatcher } from './amountRules'
+import { linkPaymentToDebt } from './debtPayments'
 import { isPartnerPayee, partnerOf, addPartnerAlias } from './partners'
 import { normalizeKey, displayName } from '../core/normalize'
 import { daysBetween } from '../core/dates'
@@ -28,6 +30,8 @@ export interface PreviewRow {
   reviewReason: string | null
   /** Set when this is money between you and the other person (movement, not income or spending). */
   counterpartyProfileId: number | null
+  /** A loan this payment counts toward (from a source the person told the app to always file that way). */
+  debtId: number | null
   /**
    * new: not in the app. duplicate: the app already has it (same account, date, amount). repeat: identical to an
    * earlier line in this same file (same date, amount and bank description): left out until the user says it is real.
@@ -48,7 +52,7 @@ export interface Preview {
   summary: { total: number; newCount: number; duplicateCount: number; repeatCount: number; nearMatchCount: number; needsReviewCount: number; minDate: string | null; maxDate: string | null; inCents: number; outCents: number }
 }
 
-interface Cat { id: number; name: string; kind: string }
+interface Cat { id: number; name: string; kind: string; parentId: number | null }
 
 function loadRules(db: Db, profileId: number): Rule[] {
   const stored = db.prepare(`SELECT pattern, merchant, category_id AS categoryId, priority, source FROM category_rule WHERE (profile_id = ? OR profile_id IS NULL) AND source IN ('user','learned')`).all(profileId) as { pattern: string; merchant: string | null; categoryId: number | null; priority: number; source: string }[]
@@ -65,7 +69,9 @@ export function buildPreview(db: Db, profileId: number, accountId: number, parse
   const acc = db.prepare('SELECT id, type, profile_id AS p FROM account WHERE id = ?').get(accountId) as { id: number; type: string; p: number } | undefined
   if (!acc || acc.p !== profileId) throw new Error('Pick one of your own accounts to import into')
   if (acc.type === 'investment') throw new Error('Investment accounts are valued by hand and have no transactions to import')
-  const cats = db.prepare('SELECT id, name, kind FROM category WHERE profile_id = ?').all(profileId) as Cat[]
+  const cats = db.prepare('SELECT id, name, kind, parent_id AS parentId FROM category WHERE profile_id = ?').all(profileId) as Cat[]
+  const mainCats = cats.filter((c) => c.parentId === null) // the built-in keywords file things under main categories; a subcategory is only ever chosen by the person or a rule
+  const amountCategory = loadAmountMatcher(db, profileId)
   const catById = new Map(cats.map((c) => [c.id, c]))
   const rules = loadRules(db, profileId)
   const partner = partnerOf(db, profileId)
@@ -98,31 +104,35 @@ export function buildPreview(db: Db, profileId: number, accountId: number, parse
       if (ruleCat && ruleCat.kind === want) { categoryId = ruleCat.id; source = rule!.source }
       else {
         const tag = cls.tag ?? builtinTag(key)
-        const t = tag && want === 'expense' ? categoryForTag(tag, cats) : null
+        const t = tag && want === 'expense' ? categoryForTag(tag, mainCats) : null
         if (t) { categoryId = t; source = 'builtin' }
       }
+      // a rule that depends on the amount ("gas stations: up to $30 is snacks, more is gas") decides before anything else guesses
+      const byAmount = cls.kind === 'expense' ? amountCategory(key, r.amountCents) : null
+      if (byAmount !== null && catById.get(byAmount)?.kind === 'expense') { categoryId = byAmount; source = 'user' }
       if (categoryId === null) reviewReason = 'Needs a category'
     }
     let kind = cls.kind
     let counterpartyProfileId: number | null = null
+    let debtId: number | null = null
     if (kind === 'unclassified' && /E-?TRANSFER/i.test(r.description) && partner && isPartnerPayee(db, profileId, r.description)) {
       kind = 'transfer'
       reviewReason = null
       counterpartyProfileId = partner.id
     }
     // a source the person already decided about ("always file money from Sam as income / Gifts") is filed the same way, in the same direction
-    if (kind === 'unclassified' && counterpartyProfileId === null) {
+    if ((kind === 'unclassified' || kind === 'expense' || kind === 'income' || kind === 'refund') && counterpartyProfileId === null) {
       const sr = findSourceRule(db, profileId, key, directionOf(r.amountCents))
       const srCat = sr?.categoryId != null ? catById.get(sr.categoryId) : undefined
-      if (sr && sr.kind === 'transfer') { kind = 'transfer'; reviewReason = null; categoryId = null; source = 'user' }
-      else if (sr && srCat && srCat.kind === (sr.kind === 'income' ? 'income' : 'expense')) { kind = sr.kind; reviewReason = null; categoryId = srCat.id; source = 'user' }
+      if (sr && kind === 'unclassified' && sr.kind === 'transfer') { kind = 'transfer'; reviewReason = null; categoryId = null; source = 'user' }
+      else if (sr && srCat && srCat.kind === (sr.kind === 'income' ? 'income' : 'expense') && (kind === 'unclassified' || kind === sr.kind)) { kind = sr.kind; reviewReason = null; categoryId = srCat.id; source = 'user'; if (sr.kind === 'expense') debtId = sr.debtId }
     }
     let description: string
     if (counterpartyProfileId !== null) description = `E-Transfer ${r.amountCents > 0 ? 'from' : 'to'} ${displayName(key)} (between us)`
     else if (cls.kind === 'transfer') description = r.amountCents > 0 ? (acc.type === 'credit_card' ? 'Payment received (from chequing)' : 'Transfer in') : /TO CARD/i.test(r.description) ? 'Payment → credit card' : 'Transfer to another account'
     else if (/E-?TRANSFER/i.test(r.description)) description = `E-Transfer ${r.amountCents > 0 ? 'from' : 'to'} ${displayName(key)}`
     else description = rule?.merchant ?? displayName(key) ?? r.description
-    return { idx, line: r.line, date: r.date, raw: r.description, description: description || r.description, key, amountCents: r.amountCents, kind, counterpartyProfileId, categoryId, suggestedCategoryId: categoryId, suggestionSource: source, reviewReason, status: 'new', matchedTxnId: null, matchedDescription: null, nearMatch: null, include: true }
+    return { idx, line: r.line, date: r.date, raw: r.description, description: description || r.description, key, amountCents: r.amountCents, kind, counterpartyProfileId, debtId, categoryId, suggestedCategoryId: categoryId, suggestionSource: source, reviewReason, status: 'new', matchedTxnId: null, matchedDescription: null, nearMatch: null, include: true }
   })
 
   // 1) already in the app: consume existing rows with the same date + amount, one per staged row
@@ -178,6 +188,7 @@ export interface CommitRow {
   suggestedCategoryId: number | null
   reviewReason: string | null
   counterpartyProfileId: number | null
+  debtId?: number | null
   status: 'new' | 'duplicate' | 'repeat'
   matchedTxnId: number | null
   include: boolean
@@ -254,7 +265,9 @@ export function commitImport(db: Db, profileId: number, accountId: number, fileN
         counterparty = other.id
         addPartnerAlias(db, profileId, r.raw || desc)
       }
-      insert.run(profileId, accountId, r.date, r.amountCents, desc, r.raw, categoryId, r.kind, reason, counterparty, result.batchId, fingerprint)
+      const ins = insert.run(profileId, accountId, r.date, r.amountCents, desc, r.raw, categoryId, r.kind, reason, counterparty, result.batchId, fingerprint)
+      // counts toward a loan the person tracks; a stale link (the loan was deleted since) must not stop the import
+      if (r.debtId && r.kind === 'expense') { try { linkPaymentToDebt(db, Number(ins.lastInsertRowid), r.debtId) } catch { /* the payment is still imported */ } }
       result.inserted++
       if (reason) result.queuedForReview++
 

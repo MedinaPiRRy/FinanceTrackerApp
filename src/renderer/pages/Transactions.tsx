@@ -106,7 +106,7 @@ export function Transactions({ profile, accounts, categories, preset, goto, hous
           <label className="field">Account<select value={accountId} onChange={(e) => setAccountId(e.target.value)}><option value="">All accounts</option>{accounts.map((a) => <option key={a.id} value={a.id}>{household && a.owner ? `${a.ownerKind === 'household' ? 'Shared' : a.owner} · ${a.name}` : a.name}</option>)}</select></label>
           {household && <label className="field">Person<select value={personId} onChange={(e) => setPersonId(e.target.value)}><option value="">Everyone</option>{household.owners.map((o) => <option key={o.profileId} value={o.profileId}>{o.kind === 'household' ? 'Shared accounts' : o.name}</option>)}</select></label>}
           {household ? <label className="field">Category group<select value={groupName} onChange={(e) => setGroupName(e.target.value)}><option value="">All groups</option>{groupNames.map((g) => <option key={g} value={g}>{g}</option>)}</select></label>
-            : <label className="field">Category<select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}><option value="">All categories</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}{c.kind === 'income' ? ' (income)' : ''}</option>)}</select></label>}
+            : <label className="field">Category<select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}><option value="">All categories</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.label}{c.kind === 'income' ? ' (income)' : ''}</option>)}</select></label>}
           <label className="field">Type<select value={kind} onChange={(e) => setKind(e.target.value)}><option value="">All types</option><option value="expense,refund">Spending (expenses and refunds)</option><option value="income,expense,refund">Income and spending</option>{Object.entries(KIND_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
           <label className="field">From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
           <label className="field">To<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
@@ -144,13 +144,13 @@ export function Transactions({ profile, accounts, categories, preset, goto, hous
                   {!household && <td><input type="checkbox" aria-label={`Select ${r.description}`} checked={selected.has(r.id)} disabled={!editable(r.kind)} onChange={() => toggle(r.id)} /></td>}
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>{r.date}</td>
                   {household && <td>{r.person === 'Household' ? 'Shared' : r.person}</td>}
-                  <td>{r.description}{r.notes && <div className="muted">{r.notes}</div>}{r.reviewReason && <div><button className="badge warn" style={{ cursor: 'pointer' }} onClick={() => goto('review')} title={r.reviewReason}>Needs review</button></div>}</td>
+                  <td>{r.description}{r.debtName && <span className="badge accent" style={{ marginLeft: 6 }} title="This payment lowers the balance of that loan">→ {r.debtName}</span>}{r.notes && <div className="muted">{r.notes}</div>}{r.reviewReason && <div><button className="badge warn" style={{ cursor: 'pointer' }} onClick={() => goto('review')} title={r.reviewReason}>Needs review</button></div>}</td>
                   <td>{r.account}</td>
                   <td>
                     {household ? <span>{r.category ?? <span className="muted">—</span>}</span> : r.kind === 'income' || r.kind === 'expense' || r.kind === 'refund' ? (
                       <select className="cat-select" aria-label={`Category for ${r.description}`} value={r.categoryId ?? ''} onChange={(e) => void changeCategory(r, Number(e.target.value))}>
                         {r.categoryId === null && <option value="">Uncategorized</option>}
-                        {catsFor(r.kind).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        {catsFor(r.kind).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
                       </select>
                     ) : <span className="muted">—</span>}
                   </td>

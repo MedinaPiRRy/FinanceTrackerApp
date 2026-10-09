@@ -87,8 +87,53 @@ CREATE TABLE source_rule (
   direction    TEXT NOT NULL CHECK (direction IN ('in','out')),
   kind         TEXT NOT NULL CHECK (kind IN ('income','expense','refund','transfer')),
   category_id  INTEGER REFERENCES category(id) ON DELETE SET NULL,
+  debt_id      INTEGER REFERENCES debt(id) ON DELETE SET NULL,   -- an expense rule can also count toward a loan the person tracks
   created_at   TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (profile_id, source_key, direction)
+);
+-- A payment that counts toward a loan the person tracks.
+CREATE TABLE debt_payment (
+  txn_id         INTEGER PRIMARY KEY REFERENCES txn(id) ON DELETE CASCADE,
+  debt_id        INTEGER NOT NULL REFERENCES debt(id) ON DELETE CASCADE,
+  applied_cents  INTEGER NOT NULL DEFAULT 0,       -- how much this payment lowered the loan's balance (0 = already reflected)
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`
+
+/** Subcategories, "taxes / interest" tags, rules that depend on the amount, and things the person owns (net worth). */
+export const FEATURE_TABLES = `
+-- A subcategory points at its parent (one level only). The parent keeps working as one line in totals, budgets and the workbook.
+ALTER TABLE category ADD COLUMN parent_id INTEGER REFERENCES category(id);
+-- What a spending category counts as on the Taxes & interest page: 'tax', 'interest', or 'none' (NULL = guess from the name).
+ALTER TABLE category ADD COLUMN purpose TEXT;
+
+-- "Gas stations: up to $30 is snacks, more is gas": the category depends on the amount.
+CREATE TABLE amount_rule (
+  id                INTEGER PRIMARY KEY,
+  profile_id        INTEGER NOT NULL REFERENCES profile(id),
+  name              TEXT NOT NULL,
+  words             TEXT NOT NULL,                       -- JSON list of merchant words, upper case
+  limit_cents       INTEGER NOT NULL CHECK (limit_cents > 0),
+  low_category_id   INTEGER NOT NULL REFERENCES category(id),   -- an amount up to the limit
+  high_category_id  INTEGER NOT NULL REFERENCES category(id),   -- more than the limit
+  created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Things the person owns that count toward net worth (a house, a car, stocks...), each with a history of its value.
+CREATE TABLE asset (
+  id           INTEGER PRIMARY KEY,
+  profile_id   INTEGER NOT NULL REFERENCES profile(id),
+  name         TEXT NOT NULL,
+  kind         TEXT NOT NULL CHECK (kind IN ('property','vehicle','investment','other')),
+  value_cents  INTEGER NOT NULL CHECK (value_cents >= 0),
+  as_of        TEXT NOT NULL,
+  notes        TEXT
+);
+CREATE TABLE asset_value (
+  asset_id     INTEGER NOT NULL REFERENCES asset(id) ON DELETE CASCADE,
+  as_of        TEXT NOT NULL,
+  value_cents  INTEGER NOT NULL CHECK (value_cents >= 0),
+  PRIMARY KEY (asset_id, as_of)
 );
 `
 
@@ -232,9 +277,10 @@ CREATE TABLE setting (
   value TEXT NOT NULL
 );
 ${SOURCE_RULE_TABLE}
+${FEATURE_TABLES}
 `
 
 /** SQL for upgrading a database from version N-1 to N. Empty until the first schema change after release. */
 export const MIGRATIONS: Record<number, { guard: string[]; sql: string }> = {
-  2: { guard: [], sql: SOURCE_RULE_TABLE }
+  2: { guard: [], sql: SOURCE_RULE_TABLE + FEATURE_TABLES }
 }

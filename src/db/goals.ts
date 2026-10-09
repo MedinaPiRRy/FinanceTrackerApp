@@ -133,7 +133,7 @@ export function listGoals(db: Db, profileId: number, today: string): GoalView[] 
     if (kind === 'manual') achieved = manual
     else if (kind === 'account') achieved = accountId ? accountValueCents(db, accountId) : null
     else if (kind === 'category') {
-      const s = db.prepare(`SELECT COALESCE(SUM(-amount_cents),0) s FROM txn WHERE category_id = ? AND kind IN ('expense','refund')`).get(categoryId) as { s: number }
+      const s = db.prepare(`SELECT COALESCE(SUM(-amount_cents),0) s FROM txn WHERE category_id IN (SELECT id FROM category WHERE id = ? OR parent_id = ?) AND kind IN ('expense','refund')`).get(categoryId, categoryId) as { s: number }
       achieved = manual + s.s
     } else {
       owed = items.reduce((s, x) => s + x.owedCents, 0)

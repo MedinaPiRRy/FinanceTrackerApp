@@ -61,6 +61,7 @@ export function deleteProfileData(db: Db, profileId: number, alsoInTransaction?:
       db.prepare("UPDATE txn SET kind = 'unclassified', category_id = NULL, transfer_group = NULL, counterparty_profile_id = NULL, review_reason = 'The other person or the shared household was removed. What was this money?' WHERE counterparty_profile_id = ? AND profile_id <> ?").run(profileId, profileId)
       const accounts = `(SELECT id FROM account WHERE profile_id = ${profileId})`
       db.exec(`
+        DELETE FROM debt_payment WHERE debt_id IN (SELECT id FROM debt WHERE profile_id = ${profileId}) OR txn_id IN (SELECT id FROM txn WHERE profile_id = ${profileId});
         DELETE FROM account_valuation WHERE account_id IN ${accounts};
         DELETE FROM debt_terms WHERE (kind = 'card' AND ref_id IN ${accounts}) OR (kind = 'loan' AND ref_id IN (SELECT id FROM debt WHERE profile_id = ${profileId}));
         DELETE FROM debt_history WHERE debt_id IN (SELECT id FROM debt WHERE profile_id = ${profileId});

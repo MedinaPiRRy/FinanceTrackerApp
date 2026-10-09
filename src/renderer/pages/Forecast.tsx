@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useKept } from '../nav'
 import { api } from '../api'
-import { ReviewNotice } from '../components/ReviewNotice'
 import { Chart, type ChartColors } from '../components/Chart'
 import { Card, ChartCard, ErrorBox, Segmented } from '../components/ui'
 import { formatCents, monthLabel, shortMonth } from '../format'
@@ -120,7 +119,6 @@ export function Forecast({ profile, goto }: { profile: Profile; goto: (p: Page, 
         <label className="field">Look ahead<select value={months} onChange={(e) => setMonths(Number(e.target.value))}>{HORIZONS.map((h) => <option key={h} value={h}>{h} months</option>)}</select></label>
       </div>
       <ErrorBox error={error} />
-      <ReviewNotice profileId={(profile as { kind?: string }).kind === 'household' ? null : profile.id} goto={goto} />
       {data.notes.map((n) => <div key={n} className="notice" style={{ marginBottom: 12 }}>{n}</div>)}
 
       <div className="grid stats">

@@ -27,7 +27,7 @@ export function RememberedSources({ profileId }: { profileId: number }) {
               <tr key={r.id}>
                 <td>{r.name}</td>
                 <td>{r.direction === 'in' ? 'coming in' : 'going out'}</td>
-                <td>{KIND[r.kind] ?? r.kind}{r.categoryName ? ` · ${r.categoryName}` : ''}</td>
+                <td>{KIND[r.kind] ?? r.kind}{r.categoryName ? ` · ${r.categoryName}` : ''}{r.debtName ? ` · counts toward ${r.debtName}` : ''}</td>
                 <td className="r"><button className="btn small danger" aria-label={`Forget ${r.name}`} onClick={() => void forget(r)}>Forget</button></td>
               </tr>
             ))}

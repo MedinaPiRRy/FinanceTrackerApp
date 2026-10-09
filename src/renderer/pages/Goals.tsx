@@ -85,7 +85,7 @@ export function Goals({ profile, accounts, categories, goto, householdMode }: { 
           )}
           {form.kind === 'category' && (
             <label className="field" style={{ marginBottom: 12 }}>Spending category that counts toward the goal
-              <select value={form.categoryId} onChange={(e) => set({ categoryId: e.target.value })} style={{ maxWidth: 320 }}><option value="">Choose…</option>{categories.filter((c) => c.kind === 'expense').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+              <select value={form.categoryId} onChange={(e) => set({ categoryId: e.target.value })} style={{ maxWidth: 320 }}><option value="">Choose…</option>{categories.filter((c) => c.kind === 'expense').map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
             </label>
           )}
           {form.kind === 'debt' && (

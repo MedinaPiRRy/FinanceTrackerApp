@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { api } from '../api'
-import { Card, ErrorBox } from '../components/ui'
+import { MatchBalance, DuplicatesCard } from '../components/AccountChecks'
+import { DebtDetailPanel } from '../components/DebtDetail'
+import { Assets } from '../components/Assets'
+import { Card, ErrorBox, ProgressBar } from '../components/ui'
 import { Chart, type ChartColors } from '../components/Chart'
 import { ACCOUNT_TYPE_LABEL, formatCents, shortMonth, today } from '../format'
 import type { AccountInfo, DebtRow, Profile } from '../../db/queries'
@@ -48,12 +51,39 @@ function DebtHistory({ debt, profileId }: { debt: DebtRow; profileId: number }) 
   return <Chart build={option} height={160} label={`Line chart of the balance owed on ${debt.name} over time`} />
 }
 
-function DebtRowEditor({ debt, profileId, onSaved }: { debt: DebtRow; profileId: number; onSaved: () => void }) {
+function DebtPayments({ debt, profileId, onChanged }: { debt: DebtRow; profileId: number; onChanged: () => void }) {
+  const [rows, setRows] = useState<{ txnId: number; date: string; description: string; amountCents: number; appliedCents: number }[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const load = () => { void api('debtPayments', profileId, debt.id).then(setRows).catch((e: Error) => setError(e.message)) }
+  useEffect(load, [profileId, debt.id, debt.balanceCents]) // eslint-disable-line react-hooks/exhaustive-deps
+  const remove = async (txnId: number) => { try { await api('debtPaymentUnlink', txnId); setError(null); load(); onChanged() } catch (e) { setError((e as Error).message) } }
+  if (!rows) return <span className="muted">Loading…</span>
+  if (rows.length === 0) return <span className="muted">No payments count toward this loan yet. When you review a payment, choose this loan under "Counts toward a loan I track".</span>
+  return (
+    <div>
+      {error && <div className="neg" role="alert">{error}</div>}
+      <div className="muted" style={{ marginBottom: 4 }}>Each of these payments lowered the balance. Interest is not added, so type the lender's balance in "Update balance" now and then.</div>
+      <table><tbody>
+        {rows.map((r) => (
+          <tr key={r.txnId}>
+            <td className="num">{r.date}</td><td>{r.description}</td>
+            <td className="r num">{formatCents(r.amountCents)}{r.appliedCents === 0 && <div className="muted" style={{ fontSize: 12 }}>already in the balance</div>}</td>
+            <td className="r"><button className="btn small" onClick={() => void remove(r.txnId)} aria-label={`Stop counting the ${r.date} payment`}>Stop counting</button></td>
+          </tr>
+        ))}
+      </tbody></table>
+    </div>
+  )
+}
+
+function DebtRowEditor({ debt, profileId, onSaved, goto }: { debt: DebtRow; profileId: number; onSaved: () => void; goto: (p: Page, preset?: TxnPreset) => void }) {
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState((debt.balanceCents / 100).toFixed(2))
   const [asOf, setAsOf] = useState(today())
   const [error, setError] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
+  const [showPays, setShowPays] = useState(false)
+  const [showDetail, setShowDetail] = useState(false)
   const save = async () => {
     const n = Number(value)
     if (value.trim() === '' || Number.isNaN(n) || n < 0) return setError('Enter the balance as a number')
@@ -62,11 +92,13 @@ function DebtRowEditor({ debt, profileId, onSaved }: { debt: DebtRow; profileId:
   return (
     <>
     <tr>
-      <td>{debt.name}<div className="muted" style={{ fontSize: 12 }}>{debt.notes}</div></td>
+      <td><button className="txn-link" aria-expanded={showDetail} title="See the payments and how it is going" onClick={() => setShowDetail((v) => !v)}>{debt.name}</button><div className="muted" style={{ fontSize: 12 }}>{debt.notes}</div></td>
       <td className="r num">{editing ? <input type="number" min="0" step="0.01" value={value} onChange={(e) => setValue(e.target.value)} className="inline-input" aria-label={`New balance for ${debt.name}`} /> : formatCents(debt.balanceCents)}<div className="muted" style={{ fontSize: 12 }}>as of {editing ? '' : debt.asOf}</div>{editing && <input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} aria-label="Balance date" />}{error && <div className="neg" style={{ fontSize: 12 }}>{error}</div>}</td>
-      <td className="r" style={{ whiteSpace: 'nowrap' }}>{editing ? <><button className="btn small primary" onClick={() => void save()}>Save</button> <button className="btn small" onClick={() => setEditing(false)}>Cancel</button></> : <><button className="btn small" onClick={() => setEditing(true)}>Update balance</button> <button className="btn small" aria-expanded={showHistory} onClick={() => setShowHistory((v) => !v)}>{showHistory ? 'Hide history' : 'History'}</button></>}</td>
+      <td className="r" style={{ whiteSpace: 'nowrap' }}>{editing ? <><button className="btn small primary" onClick={() => void save()}>Save</button> <button className="btn small" onClick={() => setEditing(false)}>Cancel</button></> : <><button className="btn small primary" aria-expanded={showDetail} onClick={() => setShowDetail((v) => !v)}>{showDetail ? 'Hide details' : 'Details'}</button> <button className="btn small" onClick={() => setEditing(true)}>Update balance</button> <button className="btn small" aria-expanded={showHistory} onClick={() => setShowHistory((v) => !v)}>{showHistory ? 'Hide history' : 'History'}</button> <button className="btn small" aria-expanded={showPays} onClick={() => setShowPays((v) => !v)}>{showPays ? 'Hide payments' : 'Payments'}</button></>}</td>
     </tr>
+    {showDetail && <tr><td colSpan={3}><DebtDetailPanel profileId={profileId} debtId={debt.id} version={debt.balanceCents} goto={goto} onChanged={onSaved} /></td></tr>}
     {showHistory && <tr><td colSpan={3}><DebtHistory debt={debt} profileId={profileId} /></td></tr>}
+    {showPays && <tr><td colSpan={3}><DebtPayments debt={debt} profileId={profileId} onChanged={onSaved} /></td></tr>}
     </>
   )
 }
@@ -121,6 +153,7 @@ function AccountCard({ a, owners, goto, reload, onError }: { a: Row; owners: Own
             {a.type === 'credit_card' || a.type === 'loan' ? <>{formatCents(Math.max(0, -(a.valueCents ?? 0)))} <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}>owed</span></> : formatCents(a.valueCents ?? 0)}
           </div>
           {a.type === 'credit_card' && <CreditLimit account={a} onSaved={reload} />}
+          {a.type !== 'investment' && !a.archived && <div style={{ marginTop: 6 }}><MatchBalance profileId={a.profileId} accountId={a.id} name={a.name} type={a.type} onDone={reload} /></div>}
           <div className="muted">{a.txnCount} transactions</div>
           <div><button className="btn small" onClick={() => goto('transactions', { accountId: a.id })}>View transactions</button></div>
         </>
@@ -162,6 +195,7 @@ function CreditLimit({ account, onSaved }: { account: Row; onSaved: () => void }
   }
   return (
     <div className="muted">
+      {limit && used !== null && <div style={{ marginBottom: 4, maxWidth: 260 }}><ProgressBar value={used} tone={used >= 0.9 ? 'over' : used >= 0.3 ? 'near' : 'ok'} label={`${account.name} credit used`} /></div>}
       {limit ? <>Limit {formatCents(limit)} · <b className={used !== null && used >= 0.3 ? 'neg' : ''}>{Math.round((used ?? 0) * 100)}% used</b> · {formatCents(Math.max(0, limit - owed))} available </> : <>No credit limit entered </>}
       {!account.archived && <button className="btn small" onClick={() => setEditing(true)}>{limit ? 'Change limit' : 'Add limit'}</button>}
     </div>
@@ -276,6 +310,7 @@ export function Accounts({ profile, household, goto, onChanged }: { profile: Pro
         <AddAccount owners={owners} defaultOwner={profile.id} allowChoice={!!household} onDone={reload} onError={setError} />
       </div>
       <ErrorBox error={error} />
+      {!household && <DuplicatesCard profileId={profile.id} onChanged={() => { reload(); onChanged() }} />}
       <div className="grid stats">
         <Card className="stat"><div className="label">Money in accounts</div><div className="value num">{formatCents(assets)}</div><div className="hint">Chequing, savings, cash and valued investments</div></Card>
         <Card className="stat"><div className="label">Owed on cards and loans</div><div className="value num">{formatCents(owed)}</div></Card>
@@ -296,12 +331,14 @@ export function Accounts({ profile, household, goto, onChanged }: { profile: Pro
           {debts.length > 0 && (
             <div className="table-wrap"><table>
               <thead><tr><th>Owed to</th><th className="r">Balance</th><th></th></tr></thead>
-              <tbody>{debts.map((d) => <DebtRowEditor key={d.id} debt={d} profileId={profile.id} onSaved={reload} />)}</tbody>
+              <tbody>{debts.map((d) => <DebtRowEditor key={d.id} debt={d} profileId={profile.id} onSaved={reload} goto={goto} />)}</tbody>
             </table></div>
           )}
           <div style={{ marginTop: 10 }}><AddDebt profileId={profile.id} onDone={reload} /></div>
         </Card>
       )}
+
+      <Assets profileId={household ? null : profile.id} version={rows.length + assets + owed + loans} onChanged={onChanged} />
 
       {closed.length > 0 && <><h3 style={{ margin: '20px 0 10px' }}>Closed accounts</h3><div className="grid two">{closed.map((a) => <AccountCard key={a.id} a={a} owners={owners} goto={goto} reload={reload} onError={setError} />)}</div></>}
     </>

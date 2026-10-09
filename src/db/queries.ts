@@ -29,7 +29,16 @@ export interface AccountInfo {
   /** Credit cards only: the limit the person entered, if any. */
   creditLimitCents: number | null
 }
-export interface CategoryInfo { id: number; name: string; kind: 'expense' | 'income' }
+export interface CategoryInfo {
+  id: number
+  name: string
+  kind: 'expense' | 'income'
+  /** Set for a subcategory: the category it sits under. */
+  parentId: number | null
+  parentName: string | null
+  /** What to show: "Gas & Transportation › Gas" for a subcategory, the plain name otherwise. */
+  label: string
+}
 
 export interface TxnFilter {
   text?: string
@@ -73,6 +82,9 @@ export interface TxnRow {
   currency: string | null
   originalCents: number | null
   fxRate: number | null
+  /** The loan this payment counts toward, if any. */
+  debtId: number | null
+  debtName: string | null
 }
 
 /** The people (not the household). */
@@ -101,18 +113,31 @@ export function listAccounts(db: Db, profileId: number): AccountInfo[] {
 }
 
 export function listCategories(db: Db, profileId: number): CategoryInfo[] {
-  return db.prepare('SELECT id, name, kind FROM category WHERE profile_id = ? ORDER BY kind, name').all(profileId) as CategoryInfo[]
+  // a category, then its subcategories right under it
+  const rows = db.prepare('SELECT c.id, c.name, c.kind, c.parent_id AS parentId, p.name AS parentName FROM category c LEFT JOIN category p ON p.id = c.parent_id WHERE c.profile_id = ? ORDER BY c.kind, COALESCE(p.name, c.name) COLLATE NOCASE, c.parent_id IS NOT NULL, c.name COLLATE NOCASE').all(profileId) as Omit<CategoryInfo, 'label'>[]
+  return rows.map((r) => ({ ...r, label: r.parentName ? `${r.parentName} › ${r.name}` : r.name }))
 }
 
 /** Creates a category for this person, or returns the existing one with the same name (case-insensitive). */
-export function createCategory(db: Db, profileId: number, name: string, kind: 'expense' | 'income'): CategoryInfo {
+export function createCategory(db: Db, profileId: number, name: string, kind: 'expense' | 'income', parentId: number | null = null): CategoryInfo {
   const clean = name.trim().replace(/\s+/g, ' ')
   if (!clean) throw new Error('Category name cannot be empty')
   if (clean.length > 60) throw new Error('Category name is too long')
-  const existing = db.prepare('SELECT id, name, kind FROM category WHERE profile_id = ? AND kind = ? AND name = ? COLLATE NOCASE').get(profileId, kind, clean) as CategoryInfo | undefined
-  if (existing) return existing
-  const id = Number(db.prepare('INSERT INTO category (profile_id, name, kind) VALUES (?,?,?)').run(profileId, clean, kind).lastInsertRowid)
-  return { id, name: clean, kind }
+  let parent: { id: number; name: string } | null = null
+  if (parentId !== null) {
+    const p = db.prepare('SELECT id, name, kind, profile_id AS profileId, parent_id AS parentId FROM category WHERE id = ?').get(parentId) as { id: number; name: string; kind: string; profileId: number; parentId: number | null } | undefined
+    if (!p || p.profileId !== profileId) throw new Error('That category no longer exists. Reload the page.')
+    if (p.kind !== kind) throw new Error(`A ${kind === 'income' ? 'income' : 'spending'} subcategory has to sit under a ${kind === 'income' ? 'income' : 'spending'} category.`)
+    if (p.parentId !== null) throw new Error('A subcategory cannot have subcategories of its own. Add it under the main category.')
+    parent = { id: p.id, name: p.name }
+  }
+  const existing = db.prepare('SELECT c.id, c.name, c.kind, c.parent_id AS parentId FROM category c WHERE c.profile_id = ? AND c.kind = ? AND c.name = ? COLLATE NOCASE').get(profileId, kind, clean) as { id: number; name: string; kind: 'expense' | 'income'; parentId: number | null } | undefined
+  if (existing) {
+    if ((existing.parentId ?? null) !== (parent?.id ?? null)) throw new Error(`There is already a category called "${existing.name}"${existing.parentId !== null ? ' (a subcategory)' : ''}. Pick another name.`)
+    return { id: existing.id, name: existing.name, kind: existing.kind, parentId: existing.parentId, parentName: parent?.name ?? null, label: parent ? `${parent.name} › ${existing.name}` : existing.name }
+  }
+  const id = Number(db.prepare('INSERT INTO category (profile_id, name, kind, parent_id) VALUES (?,?,?,?)').run(profileId, clean, kind, parent?.id ?? null).lastInsertRowid)
+  return { id, name: clean, kind, parentId: parent?.id ?? null, parentName: parent?.name ?? null, label: parent ? `${parent.name} › ${clean}` : clean }
 }
 
 const SORT_SQL: Record<NonNullable<TxnFilter['sort']>, string> = {
@@ -131,9 +156,10 @@ export function queryTxns(db: Db, profileIds: number | number[], f: TxnFilter = 
   if (f.text) { where.push('(t.description LIKE @text OR t.notes LIKE @text)'); named.text = `%${f.text}%` }
   if (f.accountId) { where.push('t.account_id = @acc'); named.acc = f.accountId }
   if (f.personId) { where.push('t.profile_id = @person'); named.person = f.personId }
-  if (f.categoryId) { where.push('t.category_id = @cat'); named.cat = f.categoryId }
+  // a main category includes its subcategories
+  if (f.categoryId) { where.push('(t.category_id = @cat OR t.category_id IN (SELECT id FROM category WHERE parent_id = @cat))'); named.cat = f.categoryId }
   if (f.groupName) {
-    const cats = db.prepare(`SELECT id, name, group_name AS groupName FROM category WHERE profile_id IN (${ids.map(() => '?').join(',')})`).all(...ids) as { id: number; name: string; groupName: string | null }[]
+    const cats = db.prepare(`SELECT c.id, COALESCE(pc.name, c.name) AS name, COALESCE(pc.group_name, c.group_name) AS groupName FROM category c LEFT JOIN category pc ON pc.id = c.parent_id WHERE c.profile_id IN (${ids.map(() => '?').join(',')})`).all(...ids) as { id: number; name: string; groupName: string | null }[]
     const inGroup = cats.filter((c) => groupOf(c) === f.groupName).map((c) => c.id)
     where.push(inGroup.length ? `t.category_id IN (${inGroup.join(',')})` : '0')
   }
@@ -149,15 +175,15 @@ export function queryTxns(db: Db, profileIds: number | number[], f: TxnFilter = 
   if (f.reviewOnly) where.push('t.review_reason IS NOT NULL')
   const w = where.join(' AND ')
   const order = `${SORT_SQL[f.sort ?? 'date']} ${f.dir === 'asc' ? 'ASC' : 'DESC'}, t.id ${f.dir === 'asc' ? 'ASC' : 'DESC'}`
-  const from = 'FROM txn t JOIN account a ON a.id = t.account_id JOIN profile pr ON pr.id = t.profile_id LEFT JOIN profile cp ON cp.id = t.counterparty_profile_id LEFT JOIN category c ON c.id = t.category_id'
+  const from = 'FROM txn t JOIN account a ON a.id = t.account_id JOIN profile pr ON pr.id = t.profile_id LEFT JOIN profile cp ON cp.id = t.counterparty_profile_id LEFT JOIN category c ON c.id = t.category_id LEFT JOIN category pc ON pc.id = c.parent_id LEFT JOIN debt_payment dp ON dp.txn_id = t.id LEFT JOIN debt ld ON ld.id = dp.debt_id'
   // positional placeholders for the profile list and named ones for the rest can not be mixed, so inline the (integer) ids
   const inlineW = w.replace(/\?/g, () => String(Number(params.shift())))
   const rows = db
     .prepare(
       `SELECT t.id, t.posted_date AS date, t.description, t.amount_cents AS amountCents, t.account_id AS accountId, a.name AS account,
-              t.category_id AS categoryId, c.name AS category, t.kind, t.review_reason AS reviewReason, t.notes, t.source, t.transfer_group AS transferGroup,
+              t.category_id AS categoryId, CASE WHEN pc.name IS NULL THEN c.name ELSE pc.name || ' › ' || c.name END AS category, t.kind, t.review_reason AS reviewReason, t.notes, t.source, t.transfer_group AS transferGroup,
               t.profile_id AS profileId, pr.name AS person, cp.name AS counterparty,
-              t.currency, t.original_cents AS originalCents, t.fx_rate AS fxRate
+              t.currency, t.original_cents AS originalCents, t.fx_rate AS fxRate, dp.debt_id AS debtId, ld.name AS debtName
        ${from} WHERE ${inlineW} ORDER BY ${order} LIMIT @limit OFFSET @offset`
     )
     .all({ ...named, limit: f.limit ?? 200, offset: f.offset ?? 0 }) as TxnRow[]
@@ -261,6 +287,8 @@ export interface Dashboard {
   lastYear: MonthSummary | null
   average: { months: number; incomeCents: number; expenseCents: number; netCents: number } | null
   series: MonthSummary[]
+  /** The month's spending inside each main category that has subcategories: { "Gas & Transportation": [{ name: "Gas", cents }, ...] }. */
+  subSpend: Record<string, { name: string; cents: number }[]>
   largestExpenses: { id: number; accountId: number; date: string; description: string; category: string | null; cents: number }[]
   assetsCents: number
   owedCardsCents: number
@@ -271,10 +299,24 @@ export interface Dashboard {
   reviewCount: number
 }
 
+/** The month's spending split by subcategory, for each main category that has any. A purchase in the main category itself shows as "Other". */
+function subSpendOf(rows: { date: string; kind: string; amountCents: number; category: string | null; sub: string | null }[], month: string): Record<string, { name: string; cents: number }[]> {
+  const roots = new Map<string, Map<string, number>>()
+  for (const r of rows) {
+    if ((r.kind !== 'expense' && r.kind !== 'refund') || !r.category || !r.date.startsWith(month)) continue
+    const m = roots.get(r.category) ?? roots.set(r.category, new Map()).get(r.category)!
+    const k = r.sub ?? 'Other'
+    m.set(k, (m.get(k) ?? 0) - r.amountCents)
+  }
+  const out: Record<string, { name: string; cents: number }[]> = {}
+  for (const [root, subs] of roots) if ([...subs.keys()].some((k) => k !== 'Other')) out[root] = [...subs].map(([name, cents]) => ({ name, cents })).filter((x) => x.cents !== 0).sort((a, b) => b.cents - a.cents)
+  return out
+}
+
 export function getDashboard(db: Db, profileId: number, requestedMonth?: string, today: string = localToday()): Dashboard | null {
   const rows = db
-    .prepare(`SELECT t.id, t.account_id AS accountId, t.posted_date AS date, t.amount_cents AS amountCents, t.kind, c.name AS category, t.description FROM txn t LEFT JOIN category c ON c.id = t.category_id WHERE t.profile_id = ? AND t.kind IN ('income','expense','refund')`)
-    .all(profileId) as { id: number; accountId: number; date: string; amountCents: number; kind: 'income' | 'expense' | 'refund'; category: string | null; description: string }[]
+    .prepare(`SELECT t.id, t.account_id AS accountId, t.posted_date AS date, t.amount_cents AS amountCents, t.kind, COALESCE(pc.name, c.name) AS category, CASE WHEN pc.id IS NULL THEN NULL ELSE c.name END AS sub, t.description FROM txn t LEFT JOIN category c ON c.id = t.category_id LEFT JOIN category pc ON pc.id = c.parent_id WHERE t.profile_id = ? AND t.kind IN ('income','expense','refund')`)
+    .all(profileId) as { id: number; accountId: number; date: string; amountCents: number; kind: 'income' | 'expense' | 'refund'; category: string | null; sub: string | null; description: string }[]
   if (!rows.length) return null
   // a charge the bank paid straight back (a fee and its rebate) is not a purchase worth pointing at
   const reversed = reversedIds(pairReversals(rows))
@@ -307,6 +349,7 @@ export function getDashboard(db: Db, profileId: number, requestedMonth?: string,
     lastYear: get(addMonths(month, -12)),
     average: prior.length ? { months: prior.length, incomeCents: Math.round(prior.reduce((a, s) => a + s.incomeCents, 0) / prior.length), expenseCents: Math.round(prior.reduce((a, s) => a + s.expenseCents, 0) / prior.length), netCents: Math.round(prior.reduce((a, s) => a + s.netCents, 0) / prior.length) } : null,
     series,
+    subSpend: subSpendOf(real, month),
     largestExpenses: real.filter((r) => r.kind === 'expense' && monthKey(r.date) === month).sort((a, b) => a.amountCents - b.amountCents).slice(0, 6).map((r) => ({ id: r.id, accountId: r.accountId, date: r.date, description: r.description, category: r.category, cents: -r.amountCents })),
     assetsCents: assets,
     owedCardsCents: owed,

@@ -19,8 +19,15 @@ import { getMonthlyReview } from '../db/monthly'
 import { createAccount, setCreditLimit, renameAccount, closeAccount, reopenAccount, moveAccount, type NewAccount } from '../db/accounts'
 import { addPartner, addHousehold, removeHousehold, removePartner } from '../db/modeChange'
 import { getAppSettings, setAppSetting, type AppSettings } from '../db/appSettings'
-import { listCategoryManage, renameCategory, deleteCategory, setCategoryBudget } from '../db/categoriesManage'
+import { listCategoryManage, renameCategory, deleteCategory, setCategoryBudget, setCategoryParent, setCategoryPurpose } from '../db/categoriesManage'
 import { renameProfile } from '../db/profilesManage'
+import { listAmountRules, createAmountRule, updateAmountRule, deleteAmountRule, applyAmountRule, type AmountRuleInput } from '../db/amountRules'
+import { debtDetail } from '../db/debtDetail'
+import { costsReport } from '../db/costsReport'
+import { listAssets, createAsset, updateAssetValue, updateAsset, deleteAsset, assetHistory, netWorth, type NewAsset, type AssetKind } from '../db/assets'
+import type { Purpose } from '../core/costs'
+import { checkBalance, matchBankBalance, findCrossDuplicates, deleteCrossDuplicates } from '../db/accountChecks'
+import { linkPaymentToDebt, unlinkPayment, listDebtPayments } from '../db/debtPayments'
 import { exportTransactionsCsv } from '../db/exportCsv'
 import { updateAccount, deleteAccount, type DeleteAccountOptions } from '../db/accounts'
 import { autoBackupIfDue, removeDatabaseFiles, type PlatformHooks } from './maintenance'
@@ -121,7 +128,7 @@ export function createHandlers(realPath: string = process.env.FINANCE_DB ?? defa
     partner: (profileId: number) => partnerOf(open(), profileId),
     accounts: (profileId: number) => listAccounts(open(), profileId),
     categories: (profileId: number) => listCategories(open(), profileId),
-    createCategory: (profileId: number, name: string, kind: 'expense' | 'income') => createCategory(open(), profileId, name, kind),
+    createCategory: (profileId: number, name: string, kind: 'expense' | 'income', parentId?: number | null) => createCategory(open(), profileId, name, kind, parentId ?? null),
     txns: (profileId: number, filter: TxnFilter) => queryTxns(open(), profileId, filter),
     /** The ids of every transaction matching a filter (up to the bulk limit), for "select all that match". */
     txnIds: (profileId: number, filter: TxnFilter) => queryTxns(open(), profileId, { ...filter, limit: 5000, offset: 0 }).rows.map((r) => r.id),
@@ -150,7 +157,7 @@ export function createHandlers(realPath: string = process.env.FINANCE_DB ?? defa
     reviewQueue: (profileId: number) => listReviewQueue(open(), profileId),
     reviewSummary: (profileId: number) => reviewSummary(open(), profileId, today()),
     /** Recent and older waiting counts for the notices on the statistics pages (null = everyone, for the household view). */
-    reviewNotice: (profileId: number | null) => reviewNotice(open(), profileId, today()),
+    reviewNotice: (profileId: number | null, month?: string) => reviewNotice(open(), profileId, today(), month),
     reviewGroups: (profileId: number, tab: ReviewTab, offset: number, limit: number) => reviewGroups(open(), profileId, tab, today(), offset, limit),
     reviewGroupItems: (profileId: number, tab: ReviewTab, key: string, offset: number, limit: number) => reviewGroupItems(open(), profileId, tab, today(), key, offset, limit),
     reviewResolveGroup: (profileId: number, tab: ReviewTab, key: string, decision: Decision, remember: boolean) => resolveReviewGroup(open(), profileId, tab, today(), key, decision, { remember }),
@@ -261,9 +268,38 @@ export function createHandlers(realPath: string = process.env.FINANCE_DB ?? defa
     setAppSetting: (key: keyof AppSettings, value: AppSettings[keyof AppSettings]) => setAppSetting(open(), key, value as never),
     renameProfile: (profileId: number, name: string) => renameProfile(open(), profileId, name),
     budgetList: (profileId: number) => listBudgets(open(), profileId),
+    /** "Match my bank": preview, then set the starting balance so the account agrees with the bank. */
+    accountCheckBalance: (profileId: number, accountId: number, bankCents: number, pendingCents?: number | null) => checkBalance(open(), profileId, accountId, bankCents, pendingCents ?? null),
+    accountMatchBalance: (profileId: number, accountId: number, bankCents: number, pendingCents?: number | null) => matchBankBalance(open(), profileId, accountId, bankCents, pendingCents ?? null),
+    /** The same transactions held by two accounts; deleting the copies always makes a backup first. */
+    duplicatesFind: (profileId: number) => findCrossDuplicates(open(), profileId),
+    duplicatesDelete: (profileId: number, fromAccountId: number, otherAccountId: number) => { backup(); return deleteCrossDuplicates(open(), profileId, fromAccountId, otherAccountId) },
+    /** Payments that count toward a loan, and linking or unlinking one. */
+    debtPayments: (profileId: number, debtId: number) => listDebtPayments(open(), profileId, debtId),
+    debtPaymentLink: (txnId: number, debtId: number) => linkPaymentToDebt(open(), txnId, debtId),
+    debtPaymentUnlink: (txnId: number) => unlinkPayment(open(), txnId),
     categoryManage: (profileId: number) => listCategoryManage(open(), profileId),
     categoryRename: (profileId: number, id: number, name: string) => renameCategory(open(), profileId, id, name),
     categoryDelete: (profileId: number, id: number, moveToId: number | null) => deleteCategory(open(), profileId, id, moveToId),
+    categorySetParent: (profileId: number, categoryId: number, parentId: number | null) => setCategoryParent(open(), profileId, categoryId, parentId),
+    categorySetPurpose: (profileId: number, categoryId: number, purpose: Purpose | null) => setCategoryPurpose(open(), profileId, categoryId, purpose),
+    // ---- rules that depend on the amount ----
+    amountRules: (profileId: number) => listAmountRules(open(), profileId),
+    amountRuleCreate: (profileId: number, input: AmountRuleInput) => createAmountRule(open(), profileId, input),
+    amountRuleUpdate: (profileId: number, id: number, input: AmountRuleInput) => updateAmountRule(open(), profileId, id, input),
+    amountRuleDelete: (profileId: number, id: number) => deleteAmountRule(open(), profileId, id),
+    /** How many waiting (or, with includeCategorised, already filed) purchases the rule would change, or does change when `apply` is true. */
+    amountRuleApply: (profileId: number, id: number, opts: { includeCategorised?: boolean; apply?: boolean }) => applyAmountRule(open(), profileId, id, { includeCategorised: opts.includeCategorised, dryRun: !opts.apply }),
+    // ---- a loan in detail, taxes and interest, and what you own ----
+    debtDetail: (profileId: number, debtId: number) => debtDetail(open(), profileId, debtId, today()),
+    costsReport: (profileId: number | null, year?: number) => costsReport(open(), profileId === null ? listOwners(open()).map((o) => o.profileId) : [profileId], year ?? new Date().getFullYear()),
+    assets: (profileId: number | null) => listAssets(open(), profileId === null ? listOwners(open()).map((o) => o.profileId) : [profileId]),
+    assetCreate: (profileId: number, a: NewAsset) => createAsset(open(), profileId, a),
+    assetUpdateValue: (profileId: number, id: number, valueCents: number, asOf: string) => updateAssetValue(open(), profileId, id, valueCents, asOf),
+    assetUpdate: (profileId: number, id: number, patch: { name?: string; kind?: AssetKind; notes?: string | null }) => updateAsset(open(), profileId, id, patch),
+    assetDelete: (profileId: number, id: number) => deleteAsset(open(), profileId, id),
+    assetHistory: (profileId: number, id: number) => assetHistory(open(), profileId, id),
+    netWorth: (profileId: number | null) => netWorth(open(), profileId === null ? listOwners(open()).map((o) => o.profileId) : [profileId]),
     categorySetBudget: (profileId: number, categoryId: number, budgetId: number | null) => setCategoryBudget(open(), profileId, categoryId, budgetId),
     accountUpdate: (profileId: number, id: number, patch: { name?: string; institution?: string | null; creditLimitCents?: number | null }) => updateAccount(open(), profileId, id, patch),
     /** Deleting an account always makes a backup copy first. */

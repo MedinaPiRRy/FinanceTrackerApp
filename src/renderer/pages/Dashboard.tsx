@@ -21,6 +21,8 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
   const [data, setData] = useState<DashboardData | null | undefined>(undefined)
   const [recurring, setRecurring] = useState<RecurringRow[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [netWorth, setNetWorth] = useState<number | null>(null)
+  useEffect(() => { void api('netWorth', profile.id).then((n) => setNetWorth(n.netWorthCents)).catch(() => setNetWorth(null)) }, [profile.id])
 
   useEffect(() => {
     api('dashboard', profile.id, month).then(setData).catch((e: Error) => setError(e.message))
@@ -86,12 +88,12 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
   const catOption = useMemo(
     () => (c: ChartColors) => ({
       grid: { left: 8, right: 70, top: 4, bottom: 4, containLabel: true },
-      tooltip: { trigger: 'item', backgroundColor: c.surface, borderColor: c.grid, textStyle: { color: c.text }, formatter: (p: { name: string; value: number }) => `${esc(p.name)}<br/><b>${formatCents(Math.round(p.value * 100))}</b>` },
+      tooltip: { trigger: 'item', backgroundColor: c.surface, borderColor: c.grid, textStyle: { color: c.text }, formatter: (p: { name: string; value: number }) => `${esc(p.name)}<br/><b>${formatCents(Math.round(p.value * 100))}</b>${(data?.subSpend[p.name] ?? []).map((x) => `<br/>${esc(x.name)}: ${formatCents(x.cents)}`).join('')}` },
       xAxis: { type: 'value', show: false },
       yAxis: { type: 'category', inverse: true, data: cats.map(([n]) => n), axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: c.text2, width: 150, overflow: 'truncate' } },
       series: [{ type: 'bar', data: cats.map(([, v]) => v / 100), itemStyle: { color: c.s1, borderRadius: [0, 4, 4, 0] }, barMaxWidth: 16, label: { show: true, position: 'right', color: c.text2, formatter: (p: { value: number }) => `$${Math.round(p.value).toLocaleString()}` } }]
     }),
-    [cats]
+    [cats, data]
   )
 
   if (error) return <ErrorBox error={error} />
@@ -125,7 +127,7 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
         </label>
       </div>
 
-      <ReviewNotice profileId={profile.id} goto={goto} />
+      <ReviewNotice profileId={profile.id} month={data.month} goto={goto} />
       {data.reviewCount > 0 && (
         <div className="banner">
           <span>{data.reviewCount} transaction{data.reviewCount === 1 ? '' : 's'} need your review. Until then they are not counted as income or spending.</span>
@@ -138,6 +140,7 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
         <Stat label="Spending" value={formatCents(s.expenseCents)} hint="After refunds, excluding transfers" onClick={() => go('expense,refund')} title="See the money that went out this month" />
         <Stat label="Net" value={formatCents(s.netCents, { sign: true })} tone={s.netCents < 0 ? 'neg' : 'pos'} hint={`Savings rate ${pct(s.savingsRate)}`} onClick={() => go('income,expense,refund')} title="See all the income and spending this month" />
         <Stat label="Accounts" value={formatCents(data.assetsCents)} hint={`Owed: ${formatCents(data.owedCardsCents)} on cards${data.otherDebtCents ? ` + ${formatCents(data.otherDebtCents)} loans` : ''}`} onClick={() => goto('accounts')} title="Open your accounts" />
+        {netWorth !== null && <Stat label="Net worth" value={formatCents(netWorth)} tone={netWorth < 0 ? 'neg' : undefined} hint="Accounts + what you own − what you owe" onClick={() => goto('accounts')} title="Add your house, car or investments" />}
         {!data.budget && <Stat label="Budget" value="Not set" hint={<button className="btn small" onClick={() => goto('budget')}>Add a budget</button>} />}
         {data.budget && <Stat label="Budget left" value={formatCents(data.budget.remainingCents)} tone={data.budget.remainingCents < 0 ? 'neg' : undefined} hint={`${formatCents(data.budget.spentCents)} of ${formatCents(data.budget.budgetCents)}${data.budget.overCount ? ` · ${data.budget.overCount} over` : ''}`} onClick={() => goto('budget', { month: data.month })} title="Open this month's budgets" />}
         <Stat label="Recurring bills" value={`${formatCents(data.recurring.monthlyCents)}/mo`} hint={`${formatCents(data.recurring.annualCents)}/yr · ${pct(data.recurring.pctOfIncome)} of avg income`} onClick={() => goto('recurring')} title="Open recurring bills" />

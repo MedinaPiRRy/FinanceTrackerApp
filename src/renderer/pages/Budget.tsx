@@ -22,7 +22,7 @@ function CategoryPicker({ categories, selected, takenBy, onChange }: { categorie
         return (
           <label key={c.id} title={other && !checked ? `Already in "${other}"` : undefined} style={other && !checked ? { opacity: 0.45 } : undefined}>
             <input type="checkbox" checked={checked} disabled={!!other && !checked} onChange={(e) => onChange(e.target.checked ? [...selected, c.id] : selected.filter((x) => x !== c.id))} />
-            {c.name}
+            {c.label}
           </label>
         )
       })}
@@ -108,7 +108,7 @@ export function Budget({ profile, categories, goto, onChanged, preset }: { prese
         <Card className="stat"><div className="label">Over budget</div><div className={`value num ${over ? 'neg' : ''}`}>{over} of {report.lines.length}</div></Card>
       </div>
 
-      <ReviewNotice profileId={profile.id} goto={goto} />
+      <ReviewNotice profileId={profile.id} month={month} goto={goto} />
       {drillId !== null && <BudgetDrill load={drillLoad} goto={goto} onClose={() => setDrillId(null)} />}
       <Card>
         {report.lines.length === 0 ? <p className="muted">No budgets yet. Add one to start tracking a category.</p> : (

@@ -4,6 +4,7 @@ import { Card, ErrorBox, Segmented } from '../components/ui'
 import { RememberedSources } from '../components/RememberedSources'
 import { GeneralSettings } from '../components/GeneralSettings'
 import { CategoryManager } from '../components/CategoryManager'
+import { AmountRules } from '../components/AmountRules'
 import { AccountManager } from '../components/AccountManager'
 import { ExportCard, DangerZone } from '../components/DataTools'
 import { SetupMode } from '../components/SetupMode'
@@ -58,6 +59,7 @@ export function Settings({ profile, partner, sample, onLeaveSample, mode, onPeop
         </Card>
         <GeneralSettings onRenamed={onPeopleChanged} />
         <CategoryManager profileId={profile.id} onChanged={onDataChanged} />
+        <AmountRules profileId={profile.id} onChanged={onDataChanged} />
         <AccountManager profileId={profile.id} owner={profile.kind === 'household' ? 'Shared accounts' : profile.name} onChanged={onDataChanged} />
         {!sample && <SetupMode mode={mode} onChanged={onSetupChanged} />}
         {profile.kind === 'person' || profile.kind === 'household' ? <RememberedSources profileId={profile.id} /> : null}

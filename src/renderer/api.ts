@@ -13,7 +13,7 @@ type Method = keyof Api
 export async function api<M extends Method>(method: M, ...args: Parameters<Api[M]>): Promise<Awaited<ReturnType<Api[M]>>> {
   const res = window.financeApi
     ? await window.financeApi.call(method, ...args)
-    : ((await (await fetch('/api', { method: 'POST', body: JSON.stringify({ method, args }) })).json()) as { ok: boolean; data?: unknown; error?: string })
+    : ((await (await fetch('/api', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ method, args }) })).json()) as { ok: boolean; data?: unknown; error?: string })
   if (!res.ok) throw new Error(res.error ?? 'Something went wrong')
   return res.data as Awaited<ReturnType<Api[M]>>
 }

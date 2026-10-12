@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { formatCents } from '../format'
+import { PagedItems } from './Pager'
 
 export function Card({ children, className = '', onClick }: { children: ReactNode; className?: string; onClick?: () => void }) {
   return <section className={`card ${className}${onClick ? ' clickable' : ''}`} onClick={onClick}>{children}</section>
@@ -64,12 +65,14 @@ export function ChartCard({ title, subtitle, controls, children, table }: { titl
         </div>
       </div>
       {showTable ? (
-        <div className="chart-table table-wrap">
-          <table>
-            <thead><tr>{table.headers.map((h, i) => <th key={h} className={i ? 'r' : ''}>{h}</th>)}</tr></thead>
-            <tbody>{table.rows.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j} className={`${j ? 'r' : ''} num`}>{c}</td>)}</tr>)}</tbody>
-          </table>
-        </div>
+        <PagedItems items={table.rows} name={`chart-table-${title}`} noun="Rows">{(pg) => (
+          <div className="chart-table table-wrap">
+            <table>
+              <thead><tr>{table.headers.map((h, i) => <th key={h} className={i ? 'r' : ''}>{h}</th>)}</tr></thead>
+              <tbody>{pg.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j} className={`${j ? 'r' : ''} num`}>{c}</td>)}</tr>)}</tbody>
+            </table>
+          </div>
+        )}</PagedItems>
       ) : (
         children
       )}

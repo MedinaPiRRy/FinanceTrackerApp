@@ -9,6 +9,6 @@ export function renameProfile(db: Db, profileId: number, name: string): void {
   if (!clean) throw new Error('Enter a name')
   if (clean.length > 40) throw new Error('That name is too long (40 characters at most)')
   if (/^household$/i.test(clean)) throw new Error('"Household" is the name of the shared view. Choose another name.')
-  if (db.prepare("SELECT 1 FROM profile WHERE kind = 'person' AND name = ? COLLATE NOCASE AND id <> ?").get(clean, profileId)) throw new Error(`Someone is already called "${clean}"`)
+  if (db.prepare("SELECT 1 FROM profile WHERE kind = 'person' AND fold(name) = fold(?) AND id <> ?").get(clean, profileId)) throw new Error(`Someone is already called "${clean}"`)
   db.prepare('UPDATE profile SET name = ? WHERE id = ?').run(clean, profileId)
 }

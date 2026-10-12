@@ -3,6 +3,7 @@ import { api } from '../api'
 import { Card, ErrorBox, Icon } from './ui'
 import { formatCents, monthLabel } from '../format'
 import type { GoalIdeas as Ideas } from '../../db/goalIdeas'
+import { toCents as moneyToCents } from '../../core/money'
 
 /**
  * "Get goal ideas": realistic goals worked out from the person's own income, spending, savings, cards and loans.
@@ -27,7 +28,7 @@ export function GoalIdeas({ profileId, onAdded, hint }: { profileId: number; onA
   }
   const add = async (key: string, original: number | null) => {
     const raw = planned[key] ?? ''
-    const cents = raw === '' ? null : Math.round(Number(raw) * 100)
+    const cents = raw === '' ? null : moneyToCents(Number(raw))
     if (cents !== null && (Number.isNaN(cents) || cents < 0)) return setError('Enter the monthly amount as a number, e.g. 200')
     setBusy(true); setError(null)
     try {

@@ -4,7 +4,7 @@ import { useKept } from '../nav'
 import { txnPreset } from '../txnLink'
 import type { Page, TxnPreset } from '../App'
 import { Card, ErrorBox } from '../components/ui'
-import { Pager } from '../components/Pager'
+import { Pager, PAGE_SIZE } from '../components/Pager'
 import { formatCents } from '../format'
 import type { AccountInfo, CategoryInfo, Profile } from '../../db/queries'
 import type { ReviewItem, Decision, ReviewGroup, ReviewSummary } from '../../db/review'
@@ -12,8 +12,8 @@ import type { ReviewTab } from '../../core/reviewTabs'
 
 type Choice = Decision['kind'] | ''
 type Go = (p: Page, pre?: TxnPreset) => void
-const GROUPS_PER_PAGE = 20
-const ITEMS_PER_PAGE = 20
+const GROUPS_PER_PAGE = PAGE_SIZE
+const ITEMS_PER_PAGE = PAGE_SIZE
 
 /** The "what is this?" form, shared by a single transaction and a whole source. */
 function DecisionForm({ moneyIn, name, accounts, excludeAccountId, categories, partner, profileId, submitLabel, onSubmit, onCategoryCreated }: {
@@ -43,8 +43,8 @@ function DecisionForm({ moneyIn, name, accounts, excludeAccountId, categories, p
   useEffect(() => { void api('debts', profileId).then((d) => setDebts(d.map((x) => ({ id: x.id, name: x.name })))).catch(() => setDebts([])) }, [profileId])
 
   const options: { value: Choice; label: string }[] = moneyIn
-    ? [{ value: 'income', label: 'Income (earned or received)' }, { value: 'refund', label: 'Reimbursement or refund (reduces spending)' }, ...(partner ? [{ value: 'between_us' as Choice, label: `Between us (money from ${partner.name})` }] : []), { value: 'transfer', label: 'Transfer between my own or shared accounts' }, { value: 'keep', label: 'Keep as is (excluded from income and spending)' }]
-    : [{ value: 'expense', label: 'Expense' }, ...(partner ? [{ value: 'between_us' as Choice, label: `Between us (money to ${partner.name})` }] : []), { value: 'transfer', label: 'Transfer between my own or shared accounts / investment' }, { value: 'keep', label: 'Keep as is (it is fine)' }]
+    ? [{ value: 'income', label: 'Income (earned or received)' }, { value: 'refund', label: 'Reimbursement or refund (reduces spending)' }, ...(partner ? [{ value: 'between_us' as Choice, label: `Between us (money from ${partner.name})` }] : []), { value: 'transfer', label: 'Transfer between my own or shared accounts (not income)' }, { value: 'keep', label: 'Not income: just take it off this list (it stays out of your income and spending)' }]
+    : [{ value: 'expense', label: 'Expense' }, ...(partner ? [{ value: 'between_us' as Choice, label: `Between us (money to ${partner.name})` }] : []), { value: 'transfer', label: 'Transfer between my own or shared accounts / investment' }, { value: 'keep', label: 'It is fine as it is: just take it off this list' }]
   const needsCategory = choice === 'income' || choice === 'refund' || choice === 'expense'
   const cats = categories.filter((c) => c.kind === (choice === 'income' ? 'income' : 'expense'))
   const ready = choice !== '' && (!needsCategory || categoryId !== '')

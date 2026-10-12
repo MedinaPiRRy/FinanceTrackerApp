@@ -10,8 +10,10 @@ import { SuggestBudgets } from '../components/SuggestBudgets'
 import type { BudgetReport } from '../../db/budgets'
 import type { CategoryInfo, Profile } from '../../db/queries'
 import type { Page, TxnPreset } from '../App'
+import { PagedItems } from '../components/Pager'
+import { toCents as moneyToCents } from '../../core/money'
 
-const toCents = (v: string) => Math.round(Number(v) * 100)
+const toCents = (v: string) => moneyToCents(Number(v))
 
 function CategoryPicker({ categories, selected, takenBy, onChange }: { categories: CategoryInfo[]; selected: number[]; takenBy: Map<number, string>; onChange: (ids: number[]) => void }) {
   return (
@@ -112,11 +114,12 @@ export function Budget({ profile, categories, goto, onChanged, preset }: { prese
       {drillId !== null && <BudgetDrill load={drillLoad} goto={goto} onClose={() => setDrillId(null)} />}
       <Card>
         {report.lines.length === 0 ? <p className="muted">No budgets yet. Add one to start tracking a category.</p> : (
-          <div className="table-wrap"><table>
+          <PagedItems items={report.lines} name="budgets" noun="Budgets">{(pg) => (
+<div className="table-wrap"><table>
             <caption className="sr-only">Budgets for {monthLabel(month)}</caption>
             <thead><tr><th>Budget</th><th className="r">Monthly budget</th><th className="r">Spent</th><th className="r">Left</th><th style={{ width: 170 }}>Progress</th><th>Status</th><th></th></tr></thead>
             <tbody>
-              {report.lines.map((l) => (
+              {pg.map((l) => (
                 <tr key={l.id}>
                   <td><button className="txn-link" title="See the transactions in this budget, by account" onClick={() => setDrillId(l.id)}>{l.name}</button><div className="muted" style={{ fontSize: 12 }}>{l.categoryNames.join(' · ') || 'No categories yet'}</div></td>
                   <td className="r num">{formatCents(l.budgetCents)}</td>
@@ -132,6 +135,7 @@ export function Budget({ profile, categories, goto, onChanged, preset }: { prese
               ))}
             </tbody>
           </table></div>
+)}</PagedItems>
         )}
       </Card>
 
@@ -140,11 +144,13 @@ export function Budget({ profile, categories, goto, onChanged, preset }: { prese
           <div style={{ height: 16 }} />
           <Card>
             <div className="card-head"><h2>Spending with no budget</h2><span className="muted">Categories in {monthLabel(month)} that are not in any budget</span></div>
-            <div className="table-wrap"><table><tbody>
-              {report.unbudgeted.map((u) => (
+            <PagedItems items={report.unbudgeted} name="unbudgeted" noun="Categories">{(pg) => (
+<div className="table-wrap"><table><tbody>
+              {pg.map((u) => (
                 <tr key={u.categoryId}><td>{u.name}</td><td className="r num">{formatCents(u.spentCents)}</td><td className="r"><button className="btn small" onClick={() => { const id = catId(u.name); if (id) goto('transactions', { categoryId: id, ...range }) }}>View</button></td></tr>
               ))}
             </tbody></table></div>
+)}</PagedItems>
           </Card>
         </>
       )}

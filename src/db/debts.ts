@@ -1,11 +1,12 @@
 import type { Db } from './open'
+import { isRealIsoDate } from '../core/dates'
 
 const iso = /^\d{4}-\d{2}-\d{2}$/
 
 export function createDebt(db: Db, profileId: number, name: string, balanceCents: number, asOf: string, notes?: string): number {
   if (!name.trim()) throw new Error('Give the debt a name')
   if (!Number.isInteger(balanceCents) || balanceCents < 0) throw new Error('The balance cannot be negative')
-  if (!iso.test(asOf)) throw new Error('Date must be YYYY-MM-DD')
+  if (!isRealIsoDate(asOf)) throw new Error('Date must be YYYY-MM-DD')
   return db.transaction(() => {
     const id = Number(db.prepare('INSERT INTO debt (profile_id, name, balance_cents, as_of, notes) VALUES (?,?,?,?,?)').run(profileId, name.trim(), balanceCents, asOf, notes ?? null).lastInsertRowid)
     db.prepare('INSERT INTO debt_history (debt_id, as_of, balance_cents) VALUES (?,?,?)').run(id, asOf, balanceCents)
@@ -16,7 +17,7 @@ export function createDebt(db: Db, profileId: number, name: string, balanceCents
 /** Records a new balance. The previous balance is kept in the history so progress over time can be shown. */
 export function updateDebtBalance(db: Db, profileId: number, debtId: number, balanceCents: number, asOf: string): void {
   if (!Number.isInteger(balanceCents) || balanceCents < 0) throw new Error('The balance cannot be negative')
-  if (!iso.test(asOf)) throw new Error('Date must be YYYY-MM-DD')
+  if (!isRealIsoDate(asOf)) throw new Error('Date must be YYYY-MM-DD')
   const d = db.prepare('SELECT balance_cents b, as_of a FROM debt WHERE id = ? AND profile_id = ?').get(debtId, profileId) as { b: number; a: string } | undefined
   if (!d) throw new Error('That debt no longer exists. Reload the page.')
   db.transaction(() => {

@@ -5,13 +5,17 @@ import { Chart, type ChartColors } from '../components/Chart'
 import { Card, ChartCard, ErrorBox, Segmented } from '../components/ui'
 import { formatCents, monthLabel, shortMonth } from '../format'
 import { emptyWhatIf, type ForecastCase, type ForecastInput, type WhatIf } from '../../core/forecast'
+import { monthByMonth, activeScenario } from '../../core/forecastTable'
+import { usePaged } from '../components/Pager'
 import type { ForecastView } from '../../db/forecast'
 import type { Profile } from '../../db/queries'
 import type { Page, TxnPreset } from '../App'
+import { PagedItems } from '../components/Pager'
+import { toCents as moneyToCents } from '../../core/money'
 
 const HORIZONS = [12, 24, 36, 60]
 const dollars = (cents: number) => Math.round(cents / 100)
-const toCents = (v: string) => Math.round(Number(v) * 100)
+const toCents = (v: string) => moneyToCents(Number(v))
 
 interface Row { name: string; c: ForecastCase; tone: 'current' | 'plan' | 'whatif' }
 
@@ -26,7 +30,6 @@ export function Forecast({ profile, goto }: { profile: Profile; goto: (p: Page, 
   const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [scenario, setScenario] = useKept<'current' | 'plan' | 'whatif'>('scenario', 'plan')
-  const [showTable, setShowTable] = useState(false)
   const first = useRef(true)
 
   // First load (and whenever the person or horizon changes): the saved what-if, if any, comes back with the forecast.
@@ -50,10 +53,9 @@ export function Forecast({ profile, goto }: { profile: Profile; goto: (p: Page, 
   }, [data])
 
   const hasRange = !!data && data.inputs.plan.income.some((s) => s.kind === 'irregular' && (s.lowCents !== s.monthlyCents || s.highCents !== s.monthlyCents))
-  const selected = useMemo(() => {
-    if (!data) return null
-    return scenario === 'whatif' && data.whatIf ? data.whatIf : scenario === 'current' ? data.current : data.plan
-  }, [data, scenario])
+  // the month-by-month table: always shown (it used to hide behind a "Show" button and the section looked empty), 50 months to a page
+  const table = useMemo(() => (data ? monthByMonth(data, scenario) : { scenario, rows: [] }), [data, scenario])
+  const { rows: tableRows, pager: tablePager } = usePaged(table.rows, 'forecast-months', 'Months')
 
   const cashOption = useMemo(() => (c: ChartColors) => {
     if (!data) return {}
@@ -173,15 +175,17 @@ export function Forecast({ profile, goto }: { profile: Profile; goto: (p: Page, 
       <Card>
         <div className="card-head"><h2>Month by month</h2>
           <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Segmented<'current' | 'plan' | 'whatif'> label="Scenario" small value={scenario} onChange={setScenario} options={[{ value: 'current', label: 'Today\'s pace' }, { value: 'plan', label: 'My plan' }, ...(data.whatIf ? [{ value: 'whatif' as const, label: 'What-if' }] : [])]} />
-            <button className="btn small" onClick={() => setShowTable((s) => !s)} aria-expanded={showTable}>{showTable ? 'Hide' : 'Show'}</button>
+            <Segmented<'current' | 'plan' | 'whatif'> label="Scenario" small value={activeScenario(data, scenario)} onChange={setScenario} options={[{ value: 'current', label: 'Today\'s pace' }, { value: 'plan', label: 'My plan' }, ...(data.whatIf ? [{ value: 'whatif' as const, label: 'What-if' }] : [])]} />
           </span>
         </div>
-        {showTable && selected && (
+        {tableRows.length === 0 ? <p className="muted">No months to show.</p> : (
+          <>
           <div className="table-wrap"><table>
             <thead><tr><th>Month</th><th className="r">Income</th><th className="r">Spending</th><th className="r">Set aside</th><th className="r">Debt paid</th><th className="r">Interest</th><th className="r">Cash</th><th className="r">Debt</th></tr></thead>
-            <tbody>{selected.expected.months.map((m) => <tr key={m.month}><td>{monthLabel(m.month)}</td><td className="r num">{formatCents(m.incomeCents)}</td><td className="r num">{formatCents(m.expenseCents)}</td><td className="r num">{formatCents(m.goalCents)}</td><td className="r num">{formatCents(m.debtPaidCents)}</td><td className="r num">{formatCents(m.interestCents)}</td><td className={`r num ${m.cashCents < 0 ? 'neg' : ''}`}>{formatCents(m.cashCents)}</td><td className="r num">{formatCents(m.debtCents)}</td></tr>)}</tbody>
+            <tbody>{tableRows.map((m) => <tr key={m.month}><td>{monthLabel(m.month)}</td><td className="r num">{formatCents(m.incomeCents)}</td><td className="r num">{formatCents(m.expenseCents)}</td><td className="r num">{formatCents(m.goalCents)}</td><td className="r num">{formatCents(m.debtPaidCents)}</td><td className="r num">{formatCents(m.interestCents)}</td><td className={`r num ${m.cashCents < 0 ? 'neg' : ''}`}>{formatCents(m.cashCents)}</td><td className="r num">{formatCents(m.debtCents)}</td></tr>)}</tbody>
           </table></div>
+          {tablePager}
+          </>
         )}
       </Card>
 
@@ -245,13 +249,17 @@ function WhatIfEditor({ w, setW, base, months }: { w: WhatIf; setW: (w: WhatIf) 
       <div className="grid two">
         <div>
           <div className="muted" style={{ marginBottom: 6 }}>Income lines. Untick one to remove it, or type a new monthly amount.</div>
-          <div className="table-wrap"><table><thead><tr><th></th><th>Income</th><th className="r">Now</th><th className="r">Change to</th></tr></thead>
-            <tbody>{base.income.length === 0 ? <tr><td colSpan={4} className="muted">No income found.</td></tr> : base.income.map((s) => lineRow(s.id, s.label, s.monthlyCents, s.kind === 'irregular' ? 'irregular' : 'regular'))}</tbody></table></div>
+          <PagedItems items={base.income} name="whatif-income" noun="Lines">{(pg) => (
+<div className="table-wrap"><table><thead><tr><th></th><th>Income</th><th className="r">Now</th><th className="r">Change to</th></tr></thead>
+            <tbody>{base.income.length === 0 ? <tr><td colSpan={4} className="muted">No income found.</td></tr> : pg.map((s) => lineRow(s.id, s.label, s.monthlyCents, s.kind === 'irregular' ? 'irregular' : 'regular'))}</tbody></table></div>
+)}</PagedItems>
         </div>
         <div>
           <div className="muted" style={{ marginBottom: 6 }}>Spending lines. Untick a bill to cancel it.</div>
-          <div className="table-wrap"><table><thead><tr><th></th><th>Spending</th><th className="r">Now</th><th className="r">Change to</th></tr></thead>
-            <tbody>{base.expenses.length === 0 ? <tr><td colSpan={4} className="muted">No spending found.</td></tr> : base.expenses.map((e) => lineRow(e.id, e.label, e.monthlyCents, e.kind === 'bill' ? 'bill' : 'everyday'))}</tbody></table></div>
+          <PagedItems items={base.expenses} name="whatif-spending" noun="Lines">{(pg) => (
+<div className="table-wrap"><table><thead><tr><th></th><th>Spending</th><th className="r">Now</th><th className="r">Change to</th></tr></thead>
+            <tbody>{base.expenses.length === 0 ? <tr><td colSpan={4} className="muted">No spending found.</td></tr> : pg.map((e) => lineRow(e.id, e.label, e.monthlyCents, e.kind === 'bill' ? 'bill' : 'everyday'))}</tbody></table></div>
+)}</PagedItems>
         </div>
       </div>
 

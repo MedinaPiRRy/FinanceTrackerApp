@@ -10,6 +10,7 @@ import type { Insight } from '../../core/insights'
 import type { Evidence } from '../../db/insights'
 import type { CategoryInfo, Profile } from '../../db/queries'
 import type { Page, TxnPreset } from '../App'
+import { PagedItems } from '../components/Pager'
 
 type Filter = 'all' | 'look' | 'good' | 'facts'
 const FILTERS: { id: Filter; label: string }[] = [{ id: 'all', label: 'All' }, { id: 'look', label: 'Worth a look' }, { id: 'good', label: 'Going well' }, { id: 'facts', label: 'Just facts' }]
@@ -64,8 +65,9 @@ export function Insights({ profile, categories, goto, openId }: { profile: Profi
         {FILTERS.map((f) => <button key={f.id} className={`btn small ${filter === f.id ? 'primary' : ''}`} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label} ({data.insights.filter((i) => matches(i, f.id)).length})</button>)}
       </div>
       {list.length === 0 ? <Card><p className="sub" style={{ margin: 0 }}>{data.insights.length === 0 ? 'Not enough data for insights yet. Import a month or two of transactions and they will appear here.' : 'Nothing in this group for this month.'}</p></Card> : (
+        <PagedItems items={list} name={`insights-${filter}`} noun="Insights">{(pg) => (
         <div className="grid" style={{ gap: 12 }}>
-          {list.map((i) => {
+          {pg.map((i) => {
             const isOpen = open === i.id
             const ev = evidence[i.id!]
             return (
@@ -95,6 +97,7 @@ export function Insights({ profile, categories, goto, openId }: { profile: Profi
             )
           })}
         </div>
+        )}</PagedItems>
       )}
     </>
   )

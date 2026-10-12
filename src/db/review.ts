@@ -7,6 +7,7 @@ import { reviewTabOf, recentFrom, REVIEW_TABS, type ReviewTab } from '../core/re
 import { olderAfterDays } from './appSettings'
 import { addSourceRule, directionOf, type RuleKind } from './sourceRules'
 import { linkPaymentToDebt } from './debtPayments'
+import { isRealIsoDate } from '../core/dates'
 
 export interface ReviewItem {
   id: number
@@ -50,7 +51,7 @@ export function resolveReview(db: Db, txnId: number, decision: Decision, opts: {
     const t = db.prepare('SELECT * FROM txn WHERE id = ? AND review_reason IS NOT NULL').get(txnId) as
       | { id: number; profile_id: number; account_id: number; posted_date: string; amount_cents: number; description: string; description_raw: string | null; kind: string; notes: string | null }
       | undefined
-    if (!t) throw new Error(`Transaction ${txnId} is not in the review queue`)
+    if (!t) throw new Error('That transaction is not waiting in Review any more. Reload the page.')
 
     const checkCategory = (id: number, kind: 'income' | 'expense') => {
       const c = db.prepare('SELECT profile_id, kind FROM category WHERE id = ?').get(id) as { profile_id: number; kind: string } | undefined
@@ -218,6 +219,8 @@ export function setValuation(db: Db, accountId: number, asOf: string, valueCents
   const a = db.prepare('SELECT type FROM account WHERE id = ?').get(accountId) as { type: string } | undefined
   if (!a) throw new Error('That account no longer exists. Reload the page.')
   if (a.type !== 'investment') throw new Error('Only investment accounts are valued manually')
+  if (!isRealIsoDate(asOf)) throw new Error('The date has to look like 2026-10-09.')
+  if (!Number.isInteger(valueCents) || valueCents < 0) throw new Error('The value has to be a whole number of cents, zero or more.')
   db.prepare(
     `INSERT INTO account_valuation (account_id, as_of, value_cents, note) VALUES (?,?,?,?)
      ON CONFLICT(account_id, as_of) DO UPDATE SET value_cents = excluded.value_cents, note = excluded.note`

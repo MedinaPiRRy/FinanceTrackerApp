@@ -3,9 +3,10 @@ import { api } from '../api'
 import { Card, ErrorBox } from './ui'
 import { formatCents, monthLabel } from '../format'
 import type { BalanceCheck, DuplicatePair } from '../../db/accountChecks'
+import { toCents as moneyToCents } from '../../core/money'
 
 const money = (c: number) => formatCents(Math.abs(c))
-const toCents = (v: string): number | null => (v.trim() === '' || Number.isNaN(Number(v)) ? null : Math.round(Number(v) * 100))
+const toCents = (v: string): number | null => (v.trim() === '' || Number.isNaN(Number(v)) ? null : moneyToCents(Number(v)))
 
 /** "Match my bank": type what the bank shows, see what would change, and set the account's starting balance so the two agree. */
 export function MatchBalance({ profileId, accountId, name, type, onDone }: { profileId: number; accountId: number; name: string; type: string; onDone: () => void }) {
@@ -42,6 +43,7 @@ export function MatchBalance({ profileId, accountId, name, type, onDone }: { pro
         <button className="btn" disabled={!value.trim()} onClick={() => void preview()}>Check</button>
         <button className="btn" onClick={() => { setOpen(false); setCheck(null); setError(null) }}>Cancel</button>
       </div>
+      <p className="sub" style={{ margin: '8px 0 0' }}>Type what your bank shows today. Only this account’s <b>starting balance</b> changes, so the app agrees with your bank; none of your transactions are touched. Pending charges are only a reminder: they are not saved.</p>
       <ErrorBox error={error} />
       {check && (
         <>

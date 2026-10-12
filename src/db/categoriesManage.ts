@@ -52,7 +52,7 @@ export function renameCategory(db: Db, profileId: number, id: number, name: stri
   const clean = name.trim().replace(/\s+/g, ' ')
   if (!clean) throw new Error('Category name cannot be empty')
   if (clean.length > 60) throw new Error('Category name is too long')
-  if (db.prepare('SELECT 1 FROM category WHERE profile_id = ? AND kind = ? AND name = ? COLLATE NOCASE AND id <> ?').get(profileId, c.kind, clean, id)) throw new Error(`There is already a ${c.kind === 'income' ? 'income' : 'spending'} category called "${clean}"`)
+  if (db.prepare('SELECT 1 FROM category WHERE profile_id = ? AND kind = ? AND fold(name) = fold(?) AND id <> ?').get(profileId, c.kind, clean, id)) throw new Error(`There is already a ${c.kind === 'income' ? 'income' : 'spending'} category called "${clean}"`)
   db.prepare('UPDATE category SET name = ? WHERE id = ?').run(clean, id)
 }
 
@@ -67,10 +67,9 @@ export function setCategoryBudget(db: Db, profileId: number, categoryId: number,
   })()
 }
 
-/** What a spending category counts as on the Taxes & interest page. `null` goes back to guessing from the name. */
+/** What a category (spending or income) counts as on the Taxes & interest page: income such as a GST/HST credit counts on the received side. `null` goes back to guessing from the name. */
 export function setCategoryPurpose(db: Db, profileId: number, categoryId: number, purpose: Purpose | null): void {
   const c = owned(db, profileId, categoryId)
-  if (c.kind !== 'expense') throw new Error('Only spending categories count as taxes or interest')
   if (purpose !== null && !['tax', 'interest', 'none'].includes(purpose)) throw new Error('Choose Taxes, Interest or Neither.')
   db.prepare('UPDATE category SET purpose = ? WHERE id = ?').run(purpose, categoryId)
 }

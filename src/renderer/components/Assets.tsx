@@ -5,9 +5,11 @@ import { Chart, type ChartColors } from './Chart'
 import { formatCents, shortMonth, today } from '../format'
 import type { AssetKind, AssetRow, NetWorth } from '../../db/assets'
 import type { Owner } from '../../db/household'
+import { PagedItems } from './Pager'
+import { toCents as moneyToCents } from '../../core/money'
 
 const KIND_LABEL: Record<AssetKind, string> = { property: 'House or property', vehicle: 'Car or vehicle', investment: 'Stocks or investments', other: 'Something else' }
-const toCents = (v: string): number | null => (v.trim() === '' || Number.isNaN(Number(v)) ? null : Math.round(Number(v) * 100))
+const toCents = (v: string): number | null => (v.trim() === '' || Number.isNaN(Number(v)) ? null : moneyToCents(Number(v)))
 
 function History({ asset }: { asset: AssetRow }) {
   const [pts, setPts] = useState<{ asOf: string; valueCents: number }[] | null>(null)
@@ -94,10 +96,12 @@ export function Assets({ profileId, version, onChanged }: { profileId: number | 
         </div>
       )}
       {list && list.length > 0 && (
-        <div className="table-wrap"><table>
+        <PagedItems items={list} name="assets" noun="Items">{(pg) => (
+<div className="table-wrap"><table>
           <thead><tr><th>Item</th><th className="r">Worth</th><th></th></tr></thead>
-          <tbody>{list.map((a) => <AssetItem key={a.id} a={a} showOwner={profileId === null} reload={reload} />)}</tbody>
+          <tbody>{pg.map((a) => <AssetItem key={a.id} a={a} showOwner={profileId === null} reload={reload} />)}</tbody>
         </table></div>
+)}</PagedItems>
       )}
       {list && list.length === 0 && !adding && <p className="muted">Nothing added yet.</p>}
       {adding ? (

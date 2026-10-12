@@ -3,15 +3,16 @@ import { useKept } from '../nav'
 import { api } from '../api'
 import { Card, ErrorBox } from '../components/ui'
 import { BulkCategoryBar } from '../components/BulkCategoryBar'
-import { Pager } from '../components/Pager'
+import { Pager, PAGE_SIZE } from '../components/Pager'
 import { formatCents, KIND_LABEL } from '../format'
 import type { AccountInfo, CategoryInfo, Profile, TxnFilter, TxnRow } from '../../db/queries'
 import type { Owner } from '../../db/household'
+import type { BulkEdit } from '../../db/txnBulk'
 import type { Page, TxnPreset } from '../App'
+import { toCents as moneyToCents } from '../../core/money'
 
-const PAGE_SIZE = 100
 type SortKey = NonNullable<TxnFilter['sort']>
-const dollarsToCents = (v: string) => (v.trim() === '' || Number.isNaN(Number(v)) ? undefined : Math.round(Number(v) * 100))
+const dollarsToCents = (v: string) => (v.trim() === '' || Number.isNaN(Number(v)) ? undefined : moneyToCents(Number(v)))
 
 export function Transactions({ profile, accounts, categories, preset, goto, household, onChanged }: { onChanged?: () => void; profile: Profile; accounts: (AccountInfo & { owner?: string; ownerKind?: 'person' | 'household' })[]; categories: CategoryInfo[]; preset: TxnPreset; goto: (p: Page) => void; household?: { owners: Owner[] } }) {
   const [text, setText] = useKept('text', preset.text ?? '')
@@ -66,7 +67,8 @@ export function Transactions({ profile, accounts, categories, preset, goto, hous
   // ticking rows to change many categories at once (not in the household view, where categories belong to different people)
   const [selected, setSelected] = useKept<Set<number>>('selected', () => new Set<number>())
   const [notice, setNotice] = useState<string | null>(null)
-  const editable = (k: string) => !household && (k === 'income' || k === 'expense' || k === 'refund')
+  // every kind of row can be ticked (moving to a category only fits income, spending and refunds; editing and deleting fit all)
+  const editable = (_k: string) => !household
   const pageIds = (result?.rows ?? []).filter((r) => editable(r.kind)).map((r) => r.id)
   const allOnPage = pageIds.length > 0 && pageIds.every((id) => selected.has(id))
   const toggle = (id: number) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
@@ -83,6 +85,21 @@ export function Transactions({ profile, accounts, categories, preset, goto, hous
     setNotice(`Moved ${r.updated.toLocaleString()} transaction${r.updated === 1 ? '' : 's'}${r.remembered ? ` and remembered ${r.remembered} name${r.remembered === 1 ? '' : 's'} for future imports` : ''}.`)
     setTimeout(() => setNotice(null), 4000)
     setSelected(new Set()); load()
+  }
+
+  const afterBulk = (text: string) => { setNotice(text); setTimeout(() => setNotice(null), 4000); setSelected(new Set()); load(); onChanged?.() }
+  const editSelected = async (edit: BulkEdit) => {
+    const r = await api('txnEditMany', [...selected], edit)
+    afterBulk(`Changed ${r.updated.toLocaleString()} transaction${r.updated === 1 ? '' : 's'}${r.remembered ? ` and remembered ${r.remembered} name${r.remembered === 1 ? '' : 's'} for future imports` : ''}.`)
+  }
+  const costSelected = async (purpose: 'tax' | 'interest' | 'none' | null) => {
+    const r = await api('costMark', [...selected], purpose)
+    const one = r.updated === 1
+    afterBulk(`${r.updated.toLocaleString()} payment${one ? '' : 's'} ${purpose === null ? (one ? 'goes' : 'go') + ' back to automatic on' : purpose === 'none' ? (one ? 'no longer counts' : 'no longer count') + ' on' : `now ${one ? 'counts' : 'count'} as ${purpose === 'tax' ? 'taxes' : 'interest'} on`} the Taxes & interest page.`)
+  }
+  const deleteSelected = async () => {
+    const r = await api('txnDeleteMany', [...selected])
+    afterBulk(`Deleted ${r.deleted.toLocaleString()} transaction${r.deleted === 1 ? '' : 's'}.`)
   }
 
   const sortBy = (k: SortKey) => { if (sort === k) setDir(dir === 'asc' ? 'desc' : 'asc'); else { setSort(k); setDir(k === 'date' || k === 'amount' ? 'desc' : 'asc') } }
@@ -117,7 +134,13 @@ export function Transactions({ profile, accounts, categories, preset, goto, hous
         </div>
         <ErrorBox error={error} />
         {notice && <div className="notice" role="status">{notice}</div>}
-        {selected.size > 0 && !household && <BulkCategoryBar count={selected.size} total={result?.total ?? 0} profileId={profile.id} categories={categories} onApply={moveSelected} onClear={() => setSelected(new Set())} onSelectAll={() => void selectAllMatching()} onCategoryCreated={() => onChanged?.()} />}
+        {selected.size > 0 && !household && <BulkCategoryBar count={selected.size} total={result?.total ?? 0} profileId={profile.id} categories={categories} onApply={moveSelected} onEdit={editSelected} onCost={costSelected} onDelete={deleteSelected} onClear={() => setSelected(new Set())} onSelectAll={() => void selectAllMatching()} onCategoryCreated={() => onChanged?.()} />}
+        {categoryId && !household && selected.size === 0 && result && result.total > 0 && (
+          <div className="notice" role="status" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span>Filed in <b>{categories.find((c) => String(c.id) === categoryId)?.label ?? 'this category'}</b>{categories.find((c) => String(c.id) === categoryId)?.parentId === null ? ' (and its subcategories)' : ''}: {result.total.toLocaleString()} transaction{result.total === 1 ? '' : 's'}.</span>
+            <button className="btn small" onClick={() => void selectAllMatching()}>Select all {result.total.toLocaleString()} to move, edit or delete</button>
+          </div>
+        )}
         {result && (
           <p className="muted" role="status">
             {result.total.toLocaleString()} transaction{result.total === 1 ? '' : 's'} · net {formatCents(result.sumCents, { sign: true })} (money in minus money out)
@@ -144,7 +167,7 @@ export function Transactions({ profile, accounts, categories, preset, goto, hous
                   {!household && <td><input type="checkbox" aria-label={`Select ${r.description}`} checked={selected.has(r.id)} disabled={!editable(r.kind)} onChange={() => toggle(r.id)} /></td>}
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>{r.date}</td>
                   {household && <td>{r.person === 'Household' ? 'Shared' : r.person}</td>}
-                  <td>{r.description}{r.debtName && <span className="badge accent" style={{ marginLeft: 6 }} title="This payment lowers the balance of that loan">→ {r.debtName}</span>}{r.notes && <div className="muted">{r.notes}</div>}{r.reviewReason && <div><button className="badge warn" style={{ cursor: 'pointer' }} onClick={() => goto('review')} title={r.reviewReason}>Needs review</button></div>}</td>
+                  <td>{r.description}{r.costPurpose && <span className="badge accent" style={{ marginLeft: 6 }} title="You chose how this payment counts on the Taxes & interest page">{r.costPurpose === 'tax' ? 'Taxes' : r.costPurpose === 'interest' ? 'Interest' : 'Not in taxes/interest'}</span>}{r.debtName && <span className="badge accent" style={{ marginLeft: 6 }} title="This payment lowers the balance of that loan">→ {r.debtName}</span>}{r.notes && <div className="muted">{r.notes}</div>}{r.reviewReason && <div><button className="badge warn" style={{ cursor: 'pointer' }} onClick={() => goto('review')} title={r.reviewReason}>Needs review</button></div>}</td>
                   <td>{r.account}</td>
                   <td>
                     {household ? <span>{r.category ?? <span className="muted">—</span>}</span> : r.kind === 'income' || r.kind === 'expense' || r.kind === 'refund' ? (

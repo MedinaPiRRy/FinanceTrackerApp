@@ -1,3 +1,6 @@
+import type { ReactNode } from 'react'
+import { useKept } from '../nav'
+
 /** Previous / next with "rows 101 to 200 of 3,204". Used wherever a list can run to thousands of rows. */
 export function Pager({ page, total, pageSize, onPage, noun = 'rows' }: { page: number; total: number; pageSize: number; onPage: (p: number) => void; noun?: string }) {
   const pages = Math.max(1, Math.ceil(total / pageSize))
@@ -16,4 +19,24 @@ export function Pager({ page, total, pageSize, onPage, noun = 'rows' }: { page: 
       </span>
     </nav>
   )
+}
+
+/** Every list and table shows this many rows at a time. */
+export const PAGE_SIZE = 50
+
+/**
+ * Pages a list that is already in memory: `rows` is the slice to draw, `pager` goes under the table.
+ * The page is remembered per `name` when the person comes back with the Back button, and snaps back into range when the list shrinks.
+ */
+export function usePaged<T>(items: readonly T[], name: string, noun = 'rows'): { rows: T[]; pager: ReactNode; page: number } {
+  const [page, setPage] = useKept(`page:${name}`, 0)
+  const last = Math.max(0, Math.ceil(items.length / PAGE_SIZE) - 1)
+  const at = Math.min(page, last)
+  return { rows: items.slice(at * PAGE_SIZE, (at + 1) * PAGE_SIZE), page: at, pager: <Pager page={at} total={items.length} pageSize={PAGE_SIZE} onPage={setPage} noun={noun} /> }
+}
+
+/** Draws a long list a page at a time: `children` gets the rows of the current page, the page controls go underneath. */
+export function PagedItems<T>({ items, name, noun, children }: { items: readonly T[]; name: string; noun?: string; children: (rows: T[]) => ReactNode }) {
+  const { rows, pager } = usePaged(items, name, noun)
+  return <>{children(rows)}{pager}</>
 }

@@ -8,6 +8,8 @@ export type CellValue = string | number | boolean | Date | { formula: true; resu
 export interface Sheet {
   name: string
   rowCount: number
+  /** The row numbers that actually hold cells, in order (a sheet can claim row 1,048,576 while holding three rows). */
+  usedRows(): number[]
   colCount: number
   getCell(row: number, col: number): { value: CellValue }
 }
@@ -57,9 +59,24 @@ function textOf(node: unknown): string {
   return String(node)
 }
 
-/** Same reader for in-memory files (e.g. an uploaded statement); nothing is written to disk. */
-export function readWorkbookBuffer(data: Uint8Array): Workbook {
-  const zip = unzipSync(new Uint8Array(data))
+/** The only parts of the package this reader looks at. Everything else (images, macros, charts) is never unpacked. */
+const NEEDED = /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|sharedStrings\.xml|styles\.xml|worksheets\/[^/]+\.xml)$/
+
+/** Default ceiling for one unpacked part. A real workbook sheet is a few MB; a "zip bomb" claims gigabytes. */
+export const MAX_PART_BYTES = 200 * 1024 * 1024
+
+/**
+ * Same reader for in-memory files (e.g. an uploaded statement); nothing is written to disk. Only the parts it needs are unpacked, and a part that
+ * would unpack to more than `maxPartBytes` is refused before any memory is spent on it.
+ */
+export function readWorkbookBuffer(data: Uint8Array, maxPartBytes: number = MAX_PART_BYTES): Workbook {
+  const zip = unzipSync(new Uint8Array(data), {
+    filter: (f) => {
+      if (!NEEDED.test(f.name)) return false
+      if (f.originalSize > maxPartBytes) throw new Error('That spreadsheet unpacks to far more data than a statement could hold, so it was not opened.')
+      return true
+    }
+  })
   const read = (p: string) => (zip[p] ? strFromU8(zip[p]) : '')
 
   const wbXml = parser.parse(read('xl/workbook.xml')).workbook
@@ -130,6 +147,7 @@ export function readWorkbookBuffer(data: Uint8Array): Workbook {
       const sheet: Sheet = {
         name,
         rowCount: maxRow,
+        usedRows: () => [...grid.keys()].sort((a, b) => a - b),
         colCount: maxCol,
         getCell: (r, c) => ({ value: grid.get(r)?.get(c) ?? null })
       }

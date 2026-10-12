@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
 import type { Db } from './open'
-import { monthKey } from '../core/dates'
+import { monthKey, isRealIsoDate } from '../core/dates'
 
 const fingerprint = () => `cash-${crypto.randomUUID()}`
 const iso = /^\d{4}-\d{2}-\d{2}$/
@@ -44,7 +44,7 @@ export function lastRates(db: Db): Record<string, number> {
  * Bank transactions are not handled here: banks convert foreign purchases themselves.
  */
 export function addTip(db: Db, profileId: number, date: string, cents: number, note?: string, foreign?: ForeignAmount): number {
-  if (!iso.test(date)) throw new Error('Date must be YYYY-MM-DD')
+  if (!isRealIsoDate(date)) throw new Error('Date must be YYYY-MM-DD')
   let home = cents
   let currency: string | null = null
   let original: number | null = null
@@ -75,7 +75,7 @@ export function addTip(db: Db, profileId: number, date: string, cents: number, n
  * appears on a bank statement. The balance may go below zero if tips were not logged yet; the UI explains that.
  */
 export function addCashSpend(db: Db, profileId: number, date: string, cents: number, description: string, expenseCategoryId: number, note?: string): { id: number; balanceCents: number } {
-  if (!iso.test(date)) throw new Error('Date must be YYYY-MM-DD')
+  if (!isRealIsoDate(date)) throw new Error('Date must be YYYY-MM-DD')
   if (!Number.isInteger(cents) || cents <= 0) throw new Error('The amount spent must be greater than zero')
   const what = description.trim()
   if (!what) throw new Error('Say what the cash was spent on')
@@ -93,7 +93,7 @@ export function addCashSpend(db: Db, profileId: number, date: string, cents: num
  * spending even though it never appears on a bank statement. One payment per bill per month.
  */
 export function recordCashBill(db: Db, profileId: number, recurringId: number, date: string, expenseCategoryId: number): number {
-  if (!iso.test(date)) throw new Error('Date must be YYYY-MM-DD')
+  if (!isRealIsoDate(date)) throw new Error('Date must be YYYY-MM-DD')
   const r = db.prepare('SELECT name, amount_cents a FROM recurring WHERE id = ? AND profile_id = ?').get(recurringId, profileId) as { name: string; a: number } | undefined
   if (!r) throw new Error('That recurring item no longer exists. Reload the page.')
   const cat = db.prepare('SELECT profile_id, kind FROM category WHERE id = ?').get(expenseCategoryId) as { profile_id: number; kind: string } | undefined
@@ -108,7 +108,7 @@ export function recordCashBill(db: Db, profileId: number, recurringId: number, d
 
 /** Deposit cash into a bank account. A transfer (two linked legs), so deposited tips are not counted as income twice. */
 export function depositCash(db: Db, profileId: number, date: string, cents: number, toAccountId: number): { groupId: string } {
-  if (!iso.test(date)) throw new Error('Date must be YYYY-MM-DD')
+  if (!isRealIsoDate(date)) throw new Error('Date must be YYYY-MM-DD')
   if (!Number.isInteger(cents) || cents <= 0) throw new Error('Deposit must be greater than zero')
   const to = db.prepare('SELECT type, profile_id p FROM account WHERE id = ?').get(toAccountId) as { type: string; p: number } | undefined
   if (!to || to.p !== profileId) throw new Error('Pick one of your own accounts')

@@ -10,11 +10,11 @@ export interface AppSettings {
   /** A waiting transaction older than this many days is set aside in Review's Older tab. */
   olderAfterDays: number
   startPage: StartPage
-  /** Automatic backups kept (0 = off). One is made the first time the app opens each day. */
+  /** Automatic backups kept (0 = off, 10 unless changed). One is made the first time the app opens each day. */
   autoBackupKeep: number
 }
 
-export const DEFAULT_SETTINGS: AppSettings = { olderAfterDays: 90, startPage: 'dashboard', autoBackupKeep: 0 }
+export const DEFAULT_SETTINGS: AppSettings = { olderAfterDays: 90, startPage: 'dashboard', autoBackupKeep: 10 }
 
 const read = (db: Db, key: string): string | undefined => (db.prepare('SELECT value FROM setting WHERE key = ?').get(key) as { value: string } | undefined)?.value
 const write = (db: Db, key: string, value: string) => db.prepare('INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value)

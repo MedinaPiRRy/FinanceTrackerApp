@@ -84,13 +84,14 @@ export interface ApplyResult { matched: number; changed: number }
 
 /**
  * Applies one rule to transactions already in the app. By default only purchases still waiting for a category; with `includeCategorised`
- * also bank-file purchases that were given a category automatically. Rows from the workbook, cash entries and anything typed by hand are never touched.
+ * also bank-file purchases that were given a category automatically. With `includeWorkbook` (personal app) rows that came from the Excel workbook are re-filed too:
+ * the Excel page then lists them as changed after the sync, because the sync never edits existing rows. Cash entries and anything typed by hand are never touched.
  */
-export function applyAmountRule(db: Db, profileId: number, id: number, opts: { includeCategorised?: boolean; dryRun?: boolean } = {}): ApplyResult {
+export function applyAmountRule(db: Db, profileId: number, id: number, opts: { includeCategorised?: boolean; includeWorkbook?: boolean; dryRun?: boolean } = {}): ApplyResult {
   const rule = listAmountRules(db, profileId).find((r) => r.id === id)
   if (!rule) throw new Error('That rule no longer exists. Reload the page.')
   const rows = db.prepare(`SELECT id, amount_cents AS cents, category_id AS cat, review_reason AS reason, source, COALESCE(description_raw, description) AS text
-    FROM txn WHERE profile_id = ? AND kind = 'expense' AND amount_cents < 0 AND source IN ('import', 'sample')`).all(profileId) as { id: number; cents: number; cat: number | null; reason: string | null; source: string; text: string }[]
+    FROM txn WHERE profile_id = ? AND kind = 'expense' AND amount_cents < 0 AND source IN (${opts.includeWorkbook ? "'import', 'sample', 'workbook'" : "'import', 'sample'"})`).all(profileId) as { id: number; cents: number; cat: number | null; reason: string | null; source: string; text: string }[]
   let matched = 0, changed = 0
   const upd = db.prepare("UPDATE txn SET category_id = ?, review_reason = CASE WHEN review_reason = 'Needs a category' THEN NULL ELSE review_reason END, reviewed_at = CASE WHEN review_reason = 'Needs a category' THEN datetime('now') ELSE reviewed_at END WHERE id = ?")
   const apply = () => {
@@ -98,7 +99,7 @@ export function applyAmountRule(db: Db, profileId: number, id: number, opts: { i
       const pick = amountCategory([{ ...rule }], normalizeKey(r.text), r.cents)
       if (pick === null) continue
       const waiting = r.cat === null || r.reason === 'Needs a category'
-      if (!waiting && !opts.includeCategorised) continue
+      if (!waiting && !opts.includeCategorised && !(opts.includeWorkbook && r.source === 'workbook')) continue
       matched++
       if (r.cat === pick) continue
       changed++

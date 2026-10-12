@@ -10,6 +10,7 @@ import { formatCents, monthLabel, pct } from '../format'
 import type { MonthlyReview as Review } from '../../db/monthly'
 import type { CategoryInfo, Profile } from '../../db/queries'
 import type { Page, TxnPreset } from '../App'
+import { PagedItems } from '../components/Pager'
 
 const TYPE_LABEL = { fact: 'Fact', trend: 'Trend', anomaly: 'Unusual', recommendation: 'Worth a look' } as const
 
@@ -60,8 +61,9 @@ export function MonthlyReview({ profile, goto, categories }: { profile: Profile;
         <Card>
           <div className="card-head"><h2>Budget performance</h2><button className="btn small" onClick={() => goto('budget')}>Open budgets</button></div>
           {data.budget.lines.length === 0 ? <p className="muted">No budgets set. <button className="btn small" onClick={() => goto('budget')}>Add a budget</button></p> : (
-            <div className="table-wrap"><table><tbody>
-              {data.budget.lines.map((l) => (
+            <PagedItems items={data.budget.lines} name="mr-budgets" noun="Budgets">{(pg) => (
+<div className="table-wrap"><table><tbody>
+              {pg.map((l) => (
                 <tr key={l.id}>
                   <td><button className="txn-link" title="See the transactions in this budget, by account" onClick={() => setDrillId(l.id)}>{l.name}</button><ProgressBar value={l.ratio ?? (l.spentCents > 0 ? 1 : 0)} tone={l.state} label={`${l.name} budget used`} /></td>
                   <td className="r num">{formatCents(l.spentCents)}<div className="muted" style={{ fontSize: 12 }}>of {formatCents(l.budgetCents)}</div></td>
@@ -69,20 +71,23 @@ export function MonthlyReview({ profile, goto, categories }: { profile: Profile;
                 </tr>
               ))}
             </tbody></table></div>
+)}</PagedItems>
           )}
         </Card>
 
         <Card>
           <div className="card-head"><h2>What changed from {prev ? monthLabel(prev.month) : 'last month'}</h2></div>
           {data.categoryChanges.length === 0 ? <p className="muted">No earlier month to compare with.</p> : (
-            <div className="table-wrap"><table>
+            <PagedItems items={data.categoryChanges} name="mr-changes" noun="Categories">{(pg) => (
+<div className="table-wrap"><table>
               <thead><tr><th>Category</th><th className="r">This month</th><th className="r">Change</th></tr></thead>
               <tbody>
-                {data.categoryChanges.map((c) => (
+                {pg.map((c) => (
                   <tr key={c.name}><td><button className="txn-link" title="See this category's transactions this month" onClick={() => go(undefined, c.name)}>{c.name}</button></td><td className="r num">{formatCents(c.cents)}</td><td className="r"><Delta now={c.cents} then={c.prevCents} goodWhen="down" /></td></tr>
                 ))}
               </tbody>
             </table></div>
+)}</PagedItems>
           )}
         </Card>
       </div>
@@ -106,8 +111,9 @@ export function MonthlyReview({ profile, goto, categories }: { profile: Profile;
         <Card>
           <div className="card-head"><h2>Recurring bills</h2><button className="btn small" onClick={() => goto('recurring')}>Open recurring</button><span className="muted">Matched by name or amount, so treat "not seen" as a prompt to check</span></div>
           {data.recurring.length === 0 ? <p className="muted">No regular bills to check.</p> : (
-            <div className="table-wrap"><table><tbody>
-              {data.recurring.map((r) => (
+            <PagedItems items={data.recurring} name="mr-recurring" noun="Bills">{(pg) => (
+<div className="table-wrap"><table><tbody>
+              {pg.map((r) => (
                 <tr key={r.name}>
                   <td><button className="txn-link" title="Open recurring bills" onClick={() => goto('recurring')}>{r.name}</button><div className="muted" style={{ fontSize: 12 }}>{r.account ?? ''}</div></td>
                   <td className="r num">{formatCents(r.paidCents ?? r.expectedCents)}{r.date && <div className="muted" style={{ fontSize: 12 }}>{r.date}</div>}</td>
@@ -115,19 +121,22 @@ export function MonthlyReview({ profile, goto, categories }: { profile: Profile;
                 </tr>
               ))}
             </tbody></table></div>
+)}</PagedItems>
           )}
         </Card>
         <Card>
           <div className="card-head"><h2>Financial goals</h2><button className="btn small" onClick={() => goto('goals')}>Open goals</button></div>
           {data.goals.length === 0 ? <p className="muted">No goals yet. <button className="btn small" onClick={() => goto('goals')}>Add a goal</button></p> : (
-            <div className="table-wrap"><table><tbody>
-              {data.goals.map((g) => (
+            <PagedItems items={data.goals} name="mr-goals" noun="Goals">{(pg) => (
+<div className="table-wrap"><table><tbody>
+              {pg.map((g) => (
                 <tr key={g.id}>
                   <td><button className="txn-link" title="Open your goals" onClick={() => goto('goals')}>{g.name}</button><ProgressBar value={g.progress.progress} tone="goal" label={`${g.name} progress`} /></td>
                   <td className="r num">{pct(g.progress.progress)}<div className="muted" style={{ fontSize: 12 }}>{g.progress.estimatedMonth ? `est. ${monthLabel(g.progress.estimatedMonth)}` : ''}</div></td>
                 </tr>
               ))}
             </tbody></table></div>
+)}</PagedItems>
           )}
         </Card>
       </div>

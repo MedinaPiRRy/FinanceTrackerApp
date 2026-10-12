@@ -26,9 +26,11 @@ export function pairReversals(txns: PairTxn[]): Map<number, number> {
   const credits = txns.filter((t) => t.kind === 'refund' && t.amountCents > 0)
   const charges = txns.filter((t) => t.kind === 'expense' && t.amountCents < 0)
   const options: { charge: PairTxn; credit: PairTxn; gap: number }[] = []
+  // refunds are looked up by account, amount and category, instead of comparing every charge with every refund
+  const creditsBy = new Map<string, PairTxn[]>()
+  for (const c of credits) { const k = `${c.accountId}|${c.amountCents}|${c.category}`; (creditsBy.get(k) ?? creditsBy.set(k, []).get(k)!).push(c) }
   for (const d of charges) {
-    for (const c of credits) {
-      if (c.accountId !== d.accountId || c.amountCents !== -d.amountCents || c.category !== d.category) continue
+    for (const c of creditsBy.get(`${d.accountId}|${-d.amountCents}|${d.category}`) ?? []) {
       const gap = Math.abs(daysBetween(d.date, c.date))
       if (gap <= MAX_REVERSAL_DAYS) options.push({ charge: d, credit: c, gap })
     }

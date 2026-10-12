@@ -10,8 +10,10 @@ import type { AccountInfo, DebtRow, Profile } from '../../db/queries'
 import type { Owner, HouseholdAccount } from '../../db/household'
 import type { AccountType } from '../../db/accounts'
 import type { Page, TxnPreset } from '../App'
+import { PagedItems } from '../components/Pager'
+import { toCents as moneyToCents } from '../../core/money'
 
-const toCents = (v: string) => Math.round(Number(v) * 100)
+const toCents = (v: string) => moneyToCents(Number(v))
 type Row = AccountInfo & { profileId: number; owner: string; ownerKind: 'person' | 'household' }
 
 function InvestmentEditor({ account, onSaved }: { account: Row; onSaved: () => void }) {
@@ -63,8 +65,9 @@ function DebtPayments({ debt, profileId, onChanged }: { debt: DebtRow; profileId
     <div>
       {error && <div className="neg" role="alert">{error}</div>}
       <div className="muted" style={{ marginBottom: 4 }}>Each of these payments lowered the balance. Interest is not added, so type the lender's balance in "Update balance" now and then.</div>
-      <table><tbody>
-        {rows.map((r) => (
+      <PagedItems items={rows} name={`debtpay-${debt.id}`} noun="Payments">{(pg) => (
+<table><tbody>
+        {pg.map((r) => (
           <tr key={r.txnId}>
             <td className="num">{r.date}</td><td>{r.description}</td>
             <td className="r num">{formatCents(r.amountCents)}{r.appliedCents === 0 && <div className="muted" style={{ fontSize: 12 }}>already in the balance</div>}</td>
@@ -72,6 +75,7 @@ function DebtPayments({ debt, profileId, onChanged }: { debt: DebtRow; profileId
           </tr>
         ))}
       </tbody></table>
+)}</PagedItems>
     </div>
   )
 }
@@ -161,7 +165,7 @@ function AccountCard({ a, owners, goto, reload, onError }: { a: Row; owners: Own
       {a.type !== 'cash' && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', borderTop: '1px solid var(--border)', paddingTop: 8 }}>
           <button className="btn small" onClick={() => setRenaming(true)}>Rename</button>
-          {a.archived ? <button className="btn small" onClick={() => void act(() => api('accountReopen', a.profileId, a.id))}>Reopen</button> : <button className="btn small" onClick={() => void close()}>Close account</button>}
+          {a.archived ? <button className="btn small" onClick={() => void act(() => api('accountReopen', a.profileId, a.id))}>Reopen</button> : <button className="btn small" title="Hides the account but keeps its history. To remove it for good, use Settings → Accounts." onClick={() => void close()}>Close account</button>}
           {a.ownerKind === 'person' && household && <button className="btn small" title="Move to the household so it counts for both of you" onClick={() => void share()}>Make shared</button>}
           {a.ownerKind === 'household' && persons.map((p) => <button key={p.profileId} className="btn small" onClick={() => void unshare(p)}>Make {p.name}'s</button>)}
         </div>
@@ -179,7 +183,7 @@ function CreditLimit({ account, onSaved }: { account: Row; onSaved: () => void }
   const limit = account.creditLimitCents
   const used = limit ? owed / limit : null
   const save = async () => {
-    try { await api('accountSetLimit', account.profileId, account.id, value.trim() === '' ? null : Math.round(Number(value) * 100)); setEditing(false); setError(null); onSaved() } catch (e) { setError((e as Error).message) }
+    try { await api('accountSetLimit', account.profileId, account.id, value.trim() === '' ? null : moneyToCents(Number(value))); setEditing(false); setError(null); onSaved() } catch (e) { setError((e as Error).message) }
   }
   if (editing) {
     return (
@@ -320,7 +324,7 @@ export function Accounts({ profile, household, goto, onChanged }: { profile: Pro
       {groups.map((g) => (
         <div key={g.owner?.profileId ?? 'mine'} style={{ marginBottom: 8 }}>
           {household && <h3 style={{ margin: '14px 0 10px' }}>{g.owner?.kind === 'household' ? 'Shared accounts' : `${g.owner?.name}'s accounts`}</h3>}
-          <div className="grid two">{g.list.map((a) => <AccountCard key={a.id} a={a} owners={owners} goto={goto} reload={reload} onError={setError} />)}</div>
+          <PagedItems items={g.list} name={`accounts-${g.owner?.profileId ?? 'mine'}`} noun="Accounts">{(pg) => <div className="grid two">{pg.map((a) => <AccountCard key={a.id} a={a} owners={owners} goto={goto} reload={reload} onError={setError} />)}</div>}</PagedItems>
         </div>
       ))}
       {household && !groups.some((g) => g.owner?.kind === 'household') && <p className="muted">No shared accounts yet. Use "Add account" and choose Shared, or open one of your accounts and press "Make shared".</p>}
@@ -329,10 +333,12 @@ export function Accounts({ profile, household, goto, onChanged }: { profile: Pro
         <Card>
           <div className="card-head"><h2>Loans and personal debts</h2><span className="muted">Update a balance whenever it changes; the history is kept for your goals.</span></div>
           {debts.length > 0 && (
-            <div className="table-wrap"><table>
+            <PagedItems items={debts} name="debts" noun="Loans">{(pg) => (
+<div className="table-wrap"><table>
               <thead><tr><th>Owed to</th><th className="r">Balance</th><th></th></tr></thead>
-              <tbody>{debts.map((d) => <DebtRowEditor key={d.id} debt={d} profileId={profile.id} onSaved={reload} goto={goto} />)}</tbody>
+              <tbody>{pg.map((d) => <DebtRowEditor key={d.id} debt={d} profileId={profile.id} onSaved={reload} goto={goto} />)}</tbody>
             </table></div>
+)}</PagedItems>
           )}
           <div style={{ marginTop: 10 }}><AddDebt profileId={profile.id} onDone={reload} /></div>
         </Card>
@@ -340,7 +346,7 @@ export function Accounts({ profile, household, goto, onChanged }: { profile: Pro
 
       <Assets profileId={household ? null : profile.id} version={rows.length + assets + owed + loans} onChanged={onChanged} />
 
-      {closed.length > 0 && <><h3 style={{ margin: '20px 0 10px' }}>Closed accounts</h3><div className="grid two">{closed.map((a) => <AccountCard key={a.id} a={a} owners={owners} goto={goto} reload={reload} onError={setError} />)}</div></>}
+      {closed.length > 0 && <><h3 style={{ margin: '20px 0 10px' }}>Closed accounts</h3><PagedItems items={closed} name="closed-accounts" noun="Accounts">{(pg) => <div className="grid two">{pg.map((a) => <AccountCard key={a.id} a={a} owners={owners} goto={goto} reload={reload} onError={setError} />)}</div>}</PagedItems></>}
     </>
   )
 }

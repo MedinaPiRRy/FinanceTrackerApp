@@ -22,7 +22,7 @@ export function addPartner(db: Db, person: NewPerson): number {
   if (!name) throw new Error('Enter your partner’s name')
   if (name.length > 40) throw new Error('That name is too long (40 characters at most)')
   if (/^household$/i.test(name)) throw new Error('"Household" is the name of the shared view. Choose another name.')
-  if (db.prepare("SELECT 1 FROM profile WHERE kind = 'person' AND name = ? COLLATE NOCASE").get(name)) throw new Error('The two names must be different')
+  if (db.prepare("SELECT 1 FROM profile WHERE kind = 'person' AND fold(name) = fold(?)").get(name)) throw new Error('The two names must be different')
   return db.transaction(() => {
     const id = Number(db.prepare("INSERT INTO profile (slug, name, kind) VALUES (?,?,'person')").run(slugFor(db, name), name).lastInsertRowid)
     seedCategories(db, id)

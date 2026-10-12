@@ -23,14 +23,18 @@ import { listCategoryManage, renameCategory, deleteCategory, setCategoryBudget, 
 import { renameProfile } from '../db/profilesManage'
 import { listAmountRules, createAmountRule, updateAmountRule, deleteAmountRule, applyAmountRule, type AmountRuleInput } from '../db/amountRules'
 import { debtDetail } from '../db/debtDetail'
-import { costsReport } from '../db/costsReport'
+import { editTxnMany, deleteTxnMany, type BulkEdit } from '../db/txnBulk'
+import { goalDetail, payoffDetail } from '../db/goalDetail'
+import type { DebtItem } from '../db/goals'
+import { costsReport, costLines, type CostLinesQuery } from '../db/costsReport'
+import { markCosts, setAccountCostsExcluded, setCostCategory } from '../db/costsManage'
 import { listAssets, createAsset, updateAssetValue, updateAsset, deleteAsset, assetHistory, netWorth, type NewAsset, type AssetKind } from '../db/assets'
 import type { Purpose } from '../core/costs'
 import { checkBalance, matchBankBalance, findCrossDuplicates, deleteCrossDuplicates } from '../db/accountChecks'
 import { linkPaymentToDebt, unlinkPayment, listDebtPayments } from '../db/debtPayments'
 import { exportTransactionsCsv } from '../db/exportCsv'
 import { updateAccount, deleteAccount, type DeleteAccountOptions } from '../db/accounts'
-import { autoBackupIfDue, removeDatabaseFiles, type PlatformHooks } from './maintenance'
+import { autoBackupIfDue, eraseDataFiles, listBackups, pruneFiles, restoreDatabase, type PlatformHooks } from './maintenance'
 import { createSetup, getAppMode, type AppMode, type NewPerson } from '../db/defaults'
 import { generateSample } from '../demo/sample'
 import { getForecast, saveWhatIf } from '../db/forecast'
@@ -61,25 +65,28 @@ export function createHandlers(realPath: string = process.env.FINANCE_DB ?? defa
     if (!db) { db = openDb(want); openPath = want }
     return db
   }
-  const removeSampleFiles = () => { for (const ext of ['', '-wal', '-shm']) fs.rmSync(samplePath + ext, { force: true }) }
+  const removeSampleFiles = () => { for (const ext of ['', '-wal', '-shm']) fs.rmSync(samplePath + ext, { force: true }); fs.rmSync(path.join(dataDir, 'sample-backups'), { recursive: true, force: true }) }
   const profileCount = () => (open().prepare("SELECT COUNT(*) n FROM profile WHERE kind = 'person'").get() as { n: number }).n
   const today = () => new Date().toLocaleDateString('en-CA')
 
   const backup = () => {
-    const dir = path.join(dataDir, 'backups')
+    // while the sample is open its backups go to a folder of their own, so they are never listed as restore points for real data
+    const dir = path.join(dataDir, sampleActive() ? 'sample-backups' : 'backups')
     fs.mkdirSync(dir, { recursive: true })
     const file = path.join(dir, `finance-${new Date().toISOString().replace(/[:.]/g, '-')}.db`)
     open().exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`)
+    pruneFiles(dir, /^finance-.*\.db$/, 30) // backups made by hand: the newest 30 are kept
+    pruneFiles(dir, /^before-restore-.*\.db$/, 5)
     return { file, sizeBytes: fs.statSync(file).size }
   }
-  /** Erases the real database (after a backup if asked). The caller names the word the person had to type. */
+  /** Erases the real data: the database, every earlier backup and the upgrade copies (after one fresh backup if asked, which is the only copy left). The caller names the word the person had to type. */
   const eraseEverything = (typed: string, word: string, keepBackup: boolean) => {
     if (typed.trim() !== word) throw new Error(`Type ${word} to confirm.`)
     if (sampleActive()) throw new Error('Sample data is open. Leave the sample first; it holds no real data to erase.')
     let backupFile: string | null = null
     if (keepBackup && profileCount() > 0) backupFile = backup().file
     db?.close(); db = null
-    removeDatabaseFiles(realPath)
+    eraseDataFiles(realPath, backupFile)
     return { backupFile }
   }
   let autoDone = false
@@ -133,6 +140,11 @@ export function createHandlers(realPath: string = process.env.FINANCE_DB ?? defa
     /** The ids of every transaction matching a filter (up to the bulk limit), for "select all that match". */
     txnIds: (profileId: number, filter: TxnFilter) => queryTxns(open(), profileId, { ...filter, limit: 5000, offset: 0 }).rows.map((r) => r.id),
     setCategoryMany: (txnIds: number[], categoryId: number, remember?: boolean) => setCategoryMany(open(), txnIds, categoryId, !!remember),
+    /** Rename, change the type of, or re-file many transactions at once. */
+    txnEditMany: (txnIds: number[], edit: BulkEdit) => editTxnMany(open(), txnIds, edit),
+    txnDeleteMany: (txnIds: number[]) => deleteTxnMany(open(), txnIds),
+    goalDetail: (profileId: number, goalId: number, offset?: number, limit?: number) => goalDetail(open(), profileId, goalId, offset ?? 0, limit ?? 50),
+    payoffDetail: (item: DebtItem, label: string, offset?: number, limit?: number) => payoffDetail(open(), item, label, offset ?? 0, limit ?? 50),
     setCategory: (txnId: number, categoryId: number) => setTxnCategory(open(), txnId, categoryId),
     dashboard: (profileId: number, month?: string) => getDashboard(open(), profileId, month),
     recurring: (profileId: number) => listRecurring(open(), profileId),
@@ -263,6 +275,14 @@ export function createHandlers(realPath: string = process.env.FINANCE_DB ?? defa
     },
     /** A consistent copy of the whole database (safe even while the app is running). */
     backupNow: () => backup(),
+    /** The backups that can be restored, newest first. */
+    backupList: () => listBackups(path.join(dataDir, 'backups')),
+    /** Replaces the current data with a backup from the list (after saving the current data as a "before restore" backup). The person types RESTORE to confirm. */
+    backupRestore: (name: string, confirm: string) => {
+      if (String(confirm).trim() !== 'RESTORE') throw new Error('Type RESTORE to confirm.')
+      if (sampleActive()) throw new Error('Sample data is open. Leave the sample first; it has no backups to restore.')
+      return restoreDatabase(path.join(dataDir, 'backups'), name, realPath, (f) => { open().exec(`VACUUM INTO '${f.replace(/'/g, "''")}'`) }, () => { db?.close(); db = null })
+    },
     // ---- settings ----
     appSettings: () => getAppSettings(open()),
     setAppSetting: (key: keyof AppSettings, value: AppSettings[keyof AppSettings]) => setAppSetting(open(), key, value as never),
@@ -289,10 +309,17 @@ export function createHandlers(realPath: string = process.env.FINANCE_DB ?? defa
     amountRuleUpdate: (profileId: number, id: number, input: AmountRuleInput) => updateAmountRule(open(), profileId, id, input),
     amountRuleDelete: (profileId: number, id: number) => deleteAmountRule(open(), profileId, id),
     /** How many waiting (or, with includeCategorised, already filed) purchases the rule would change, or does change when `apply` is true. */
-    amountRuleApply: (profileId: number, id: number, opts: { includeCategorised?: boolean; apply?: boolean }) => applyAmountRule(open(), profileId, id, { includeCategorised: opts.includeCategorised, dryRun: !opts.apply }),
+    amountRuleApply: (profileId: number, id: number, opts: { includeCategorised?: boolean; includeWorkbook?: boolean; apply?: boolean }) => applyAmountRule(open(), profileId, id, { includeCategorised: opts.includeCategorised, includeWorkbook: opts.includeWorkbook, dryRun: !opts.apply }),
     // ---- a loan in detail, taxes and interest, and what you own ----
     debtDetail: (profileId: number, debtId: number) => debtDetail(open(), profileId, debtId, today()),
     costsReport: (profileId: number | null, year?: number) => costsReport(open(), profileId === null ? listOwners(open()).map((o) => o.profileId) : [profileId], year ?? new Date().getFullYear()),
+    /** The transactions behind a Taxes & interest figure (or the payments left out, to count them again), a page at a time. */
+    costLines: (profileId: number | null, year: number, q: CostLinesQuery) => costLines(open(), profileId === null ? listOwners(open()).map((o) => o.profileId) : [profileId], year, q),
+    /** Marks payments as taxes, as interest, as not counted, or (null) back to automatic. */
+    costMark: (txnIds: number[], purpose: Purpose | null) => markCosts(open(), txnIds, purpose),
+    /** Takes a whole account out of the Taxes & interest page, or puts it back. */
+    costCategorySet: (categoryId: number, purpose: Purpose | null) => setCostCategory(open(), categoryId, purpose),
+    costAccountExclude: (accountId: number, excluded: boolean) => setAccountCostsExcluded(open(), accountId, excluded),
     assets: (profileId: number | null) => listAssets(open(), profileId === null ? listOwners(open()).map((o) => o.profileId) : [profileId]),
     assetCreate: (profileId: number, a: NewAsset) => createAsset(open(), profileId, a),
     assetUpdateValue: (profileId: number, id: number, valueCents: number, asOf: string) => updateAssetValue(open(), profileId, id, valueCents, asOf),

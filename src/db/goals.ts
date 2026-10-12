@@ -1,6 +1,7 @@
 import type { Db } from './open'
 import { accountValueCents } from './review'
 import { computeGoal, type GoalKind, type GoalProgress } from '../core/goals'
+import { isRealIsoDate } from '../core/dates'
 
 export interface DebtItem { accountId?: number; debtId?: number }
 
@@ -53,7 +54,7 @@ function itemOwed(db: Db, profileId: number, it: DebtItem): { type: 'card' | 'lo
 
 function validate(db: Db, profileId: number, dto: GoalDto) {
   if (!dto.name.trim()) throw new Error('Give the goal a name')
-  if (dto.deadline && !iso.test(dto.deadline)) throw new Error('Deadline must be a date')
+  if (dto.deadline && !isRealIsoDate(dto.deadline)) throw new Error('Deadline must be a date')
   if (dto.plannedMonthlyCents != null && (!Number.isInteger(dto.plannedMonthlyCents) || dto.plannedMonthlyCents < 0)) throw new Error('The monthly amount cannot be negative')
   if (dto.manualCents != null && (!Number.isInteger(dto.manualCents) || dto.manualCents < 0)) throw new Error('The amount saved cannot be negative')
   if (dto.kind === 'account') {

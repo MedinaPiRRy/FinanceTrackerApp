@@ -8,12 +8,12 @@ import { useTheme } from '../theme'
 
 echarts.use([BarChart, LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
-export interface ChartColors { s1: string; s2: string; s3: string; text: string; text2: string; muted: string; grid: string; surface: string }
+export interface ChartColors { s1: string; s2: string; s3: string; text: string; text2: string; muted: string; grid: string; surface: string; font: string }
 
 function readColors(): ChartColors {
   const cs = getComputedStyle(document.documentElement)
   const v = (n: string) => cs.getPropertyValue(n).trim()
-  return { s1: v('--series-1'), s2: v('--series-2'), s3: v('--series-3'), text: v('--text'), text2: v('--text-2'), muted: v('--text-3'), grid: v('--grid'), surface: v('--surface') }
+  return { s1: v('--series-1'), s2: v('--series-2'), s3: v('--series-3'), text: v('--text'), text2: v('--text-2'), muted: v('--text-3'), grid: v('--grid'), surface: v('--surface'), font: v('--font') }
 }
 
 interface Props {
@@ -36,7 +36,8 @@ export function Chart({ build, height = 280, label, onClick }: Props) {
   useEffect(() => {
     if (!el.current) return
     const chart = echarts.init(el.current, undefined, { renderer: 'canvas' })
-    chart.setOption(build(readColors()))
+    const colors = readColors()
+    chart.setOption({ textStyle: { fontFamily: colors.font }, ...build(colors) })
     if (clickable) {
       chart.on('click', (p) => clickRef.current?.(String(p.name), { seriesName: String(p.seriesName ?? ''), dataIndex: p.dataIndex ?? 0 }))
       chart.getZr().on('mousemove', (e) => { chart.getZr().setCursorStyle(e.target ? 'pointer' : 'default') })

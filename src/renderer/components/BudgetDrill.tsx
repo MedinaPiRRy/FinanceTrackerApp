@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { PagedItems } from './Pager'
 import { Card, ErrorBox } from './ui'
 import { formatCents } from '../format'
 import { txnPreset } from '../txnLink'
@@ -40,9 +41,11 @@ export function BudgetDrill({ load, goto, onClose }: { load: () => Promise<Drill
         <>
           <p className="sub" style={{ marginTop: 0 }}>{formatCents(data.totalCents)} spent of a {formatCents(data.budgetCents)} budget, across {data.columns.length} account{data.columns.length === 1 ? '' : 's'}. Refunds are shown as money back.</p>
           {data.columns.length === 0 ? <p className="muted">Nothing was spent in this budget this month.</p> : oneList ? (
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-              {data.columns.flatMap((c) => c.rows.map((r) => ({ r, account: c.owner ? `${c.account} (${c.owner})` : c.account }))).sort((a, b) => b.r.date.localeCompare(a.r.date) || b.r.id - a.r.id).map(({ r, account }) => line(r, account))}
-            </ul>
+            <PagedItems items={data.columns.flatMap((c) => c.rows.map((r) => ({ r, account: c.owner ? `${c.account} (${c.owner})` : c.account }))).sort((a, b) => b.r.date.localeCompare(a.r.date) || b.r.id - a.r.id)} name="budget-drill" noun="Transactions">{(pg) => (
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                {pg.map(({ r, account }) => line(r, account))}
+              </ul>
+            )}</PagedItems>
           ) : (
             <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', alignItems: 'start' }}>
               {data.columns.map((c) => (
@@ -51,7 +54,7 @@ export function BudgetDrill({ load, goto, onClose }: { load: () => Promise<Drill
                     <b>{c.account}{c.owner && <span className="muted"> ({c.owner})</span>}</b>
                     <b className="num">{formatCents(c.totalCents)}</b>
                   </div>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>{c.rows.map((r) => line(r))}</ul>
+                  <PagedItems items={c.rows} name={`budget-drill-${c.accountId}`} noun="Transactions">{(pg) => <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>{pg.map((r) => line(r))}</ul>}</PagedItems>
                   {c.hidden > 0 && <p className="muted" style={{ fontSize: 12 }}>{c.hidden} older transaction{c.hidden === 1 ? '' : 's'} not shown; the total includes them.</p>}
                 </section>
               ))}

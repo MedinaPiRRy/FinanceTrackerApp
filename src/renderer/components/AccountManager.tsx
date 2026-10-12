@@ -3,13 +3,15 @@ import { api } from '../api'
 import { Card, ErrorBox } from './ui'
 import { formatCents } from '../format'
 import type { AccountInfo } from '../../db/queries'
+import { PagedItems } from './Pager'
+import { toCents as moneyToCents } from '../../core/money'
 
 const TYPES: { value: string; label: string }[] = [
   { value: 'chequing', label: 'Chequing' }, { value: 'savings', label: 'Savings' }, { value: 'credit_card', label: 'Credit card' },
   { value: 'investment', label: 'Investment (valued by hand)' }, { value: 'loan', label: 'Loan or line of credit' }, { value: 'other', label: 'Other' }
 ]
 const typeLabel = (t: string) => (t === 'cash' ? 'Cash wallet' : TYPES.find((x) => x.value === t)?.label ?? t)
-const toCents = (v: string): number | undefined => (v.trim() === '' || Number.isNaN(Number(v)) ? undefined : Math.round(Number(v) * 100))
+const toCents = (v: string): number | undefined => (v.trim() === '' || Number.isNaN(Number(v)) ? undefined : moneyToCents(Number(v)))
 
 /** Add, edit and delete accounts. Deleting one with transactions asks whether to move them to another account or delete them too. */
 export function AccountManager({ profileId, owner, onChanged }: { profileId: number; owner?: string; onChanged: () => void }) {
@@ -42,7 +44,7 @@ export function AccountManager({ profileId, owner, onChanged }: { profileId: num
   return (
     <Card>
       <div className="card-head"><h2>Accounts{owner ? ` · ${owner}` : ''}</h2><button className="btn primary small" onClick={() => setAdding(!adding)} aria-expanded={adding}>{adding ? 'Cancel' : 'Add an account'}</button></div>
-      <p className="sub" style={{ marginTop: 0 }}>Add, rename or delete the accounts you track. Closing an account (on the Accounts page) hides it but keeps its history; deleting removes it.</p>
+      <p className="sub" style={{ marginTop: 0 }}>Add, rename or delete the accounts you track. To <b>close</b> an account instead (hide it but keep its history), use the <b>Close account</b> button on the Accounts page. Deleting, here, removes the account for good.</p>
       <ErrorBox error={error} />
       {msg && <div className="notice" role="status">{msg}</div>}
 
@@ -60,10 +62,11 @@ export function AccountManager({ profileId, owner, onChanged }: { profileId: num
       )}
 
       {accounts === null ? <p className="muted">Loading…</p> : (
-        <div className="table-wrap"><table>
+        <PagedItems items={accounts} name="settings-accounts" noun="Accounts">{(pg) => (
+<div className="table-wrap"><table>
           <thead><tr><th>Account</th><th>Type</th><th className="r">Transactions</th><th className="r">Balance</th><th></th></tr></thead>
           <tbody>
-            {accounts.map((a) => (
+            {pg.map((a) => (
               <tr key={a.id} style={a.archived ? { opacity: 0.6 } : undefined}>
                 <td>
                   {a.name}{a.archived && <span className="badge" style={{ marginLeft: 6 }}>Closed</span>}
@@ -80,6 +83,7 @@ export function AccountManager({ profileId, owner, onChanged }: { profileId: num
             ))}
           </tbody>
         </table></div>
+)}</PagedItems>
       )}
 
       {editing !== null && accounts?.find((a) => a.id === editing) && (() => {

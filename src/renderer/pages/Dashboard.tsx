@@ -199,22 +199,6 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
           <Chart build={lineOption} label="Line chart of cumulative net" onClick={(_n, p) => { const m = series[p.dataIndex]?.month; if (m) go('income,expense,refund', m) }} />
         </ChartCard>
         <Card>
-          <div className="card-head"><h2>Insights</h2><button className="btn small" onClick={() => goto('insights')}>See all and what they mean</button></div>
-          {data.insights.length === 0 ? <p className="muted">Not enough data for insights yet.</p> : (
-            <div className="insights">
-              {data.insights.map((i, idx) => (
-                <div className="insight" key={idx}>
-                  <span className={`badge ${i.tone === 'warn' ? 'warn' : i.tone === 'good' ? 'good' : ''}`}>{TYPE_LABEL[i.type]}</span>
-                  <div><button className="txn-link" title="Open this insight and see what is behind it" onClick={() => goto('insights', { insightId: i.id })}><strong>{i.title}</strong></button>{i.detail && <p>{i.detail}</p>}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
-
-      <div className="grid two">
-        <Card>
           <div className="card-head"><h2>Largest expenses</h2><button className="btn small" onClick={() => go('expense')}>See all spending</button></div>
           <div className="table-wrap"><table><tbody>
             {data.largestExpenses.map((t) => (
@@ -222,6 +206,9 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
             ))}
           </tbody></table></div>
         </Card>
+      </div>
+
+      <div className="grid">
         <Card>
           <div className="card-head"><h2>Biggest recurring bills</h2><button className="btn small" onClick={() => goto('recurring')}>See all</button></div>
           {topRecurring.length === 0 ? <p className="muted">No recurring bills recorded.</p> : (
@@ -231,6 +218,20 @@ export function Dashboard({ profile, categories, goto }: { profile: Profile; cat
           )}
         </Card>
       </div>
+
+      <Card>
+        <div className="card-head"><h2>Insights</h2><button className="btn small" onClick={() => goto('insights')}>{data.insights.length > 3 ? `See all ${data.insights.length} insights` : 'See all and what they mean'}</button></div>
+        {data.insights.length === 0 ? <p className="muted">Not enough data for insights yet.</p> : (
+          <div className="insights">
+            {data.insights.slice(0, 3).map((i, idx) => (
+              <div className="insight" key={idx}>
+                <span className={`badge ${i.tone === 'warn' ? 'warn' : i.tone === 'good' ? 'good' : ''}`}>{TYPE_LABEL[i.type]}</span>
+                <div><button className="txn-link" title="Open this insight and see what is behind it" onClick={() => goto('insights', { insightId: i.id })}><strong>{i.title}</strong></button>{i.detail && <p>{i.detail}</p>}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
     </>
   )
 }

@@ -1,14 +1,14 @@
 import { createContext, useContext, useLayoutEffect, useState, type ReactNode } from 'react'
+import { parseSetting, resolveStyle, STORAGE_KEY, type StyleId, type ThemeSetting } from './themes'
 
-export type ThemeSetting = 'system' | 'light' | 'dark'
-interface Ctx { setting: ThemeSetting; resolved: 'light' | 'dark'; setSetting(s: ThemeSetting): void }
+export type { ThemeSetting, StyleId } from './themes'
+interface Ctx { setting: ThemeSetting; resolved: StyleId; setSetting(s: ThemeSetting): void }
 const ThemeCtx = createContext<Ctx>({ setting: 'system', resolved: 'light', setSetting: () => {} })
 export const useTheme = () => useContext(ThemeCtx)
 
 const read = (): ThemeSetting => {
   try {
-    const v = localStorage.getItem('theme')
-    return v === 'light' || v === 'dark' ? v : 'system'
+    return parseSetting(localStorage.getItem(STORAGE_KEY))
   } catch {
     return 'system'
   }
@@ -34,9 +34,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [setting])
 
   const setSetting = (s: ThemeSetting) => {
-    setSettingState(s)
-    try { localStorage.setItem('theme', s) } catch { /* storage unavailable: setting just won't persist */ }
+    const next = parseSetting(s)
+    setSettingState(next)
+    try { localStorage.setItem(STORAGE_KEY, next) } catch { /* storage unavailable: setting just won't persist */ }
   }
-  const resolved = setting === 'system' ? (sysDark ? 'dark' : 'light') : setting
-  return <ThemeCtx.Provider value={{ setting, resolved, setSetting }}>{children}</ThemeCtx.Provider>
+  return <ThemeCtx.Provider value={{ setting, resolved: resolveStyle(setting, sysDark), setSetting }}>{children}</ThemeCtx.Provider>
 }

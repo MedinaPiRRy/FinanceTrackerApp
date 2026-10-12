@@ -24,6 +24,7 @@ export function HouseholdDashboard({ goto }: { goto: (p: Page, preset?: TxnPrese
   const [error, setError] = useState<string | null>(null)
   useEffect(() => { api('householdOverview', month).then(setData).catch((e: Error) => setError(e.message)) }, [month])
   const [netWorth, setNetWorth] = useState<number | null>(null)
+  const [allFacts, setAllFacts] = useState(false)
   useEffect(() => { void api('netWorth', null).then((n) => setNetWorth(n.netWorthCents)).catch(() => setNetWorth(null)) }, [])
 
   const series = useMemo(() => {
@@ -148,13 +149,14 @@ export function HouseholdDashboard({ goto }: { goto: (p: Page, preset?: TxnPrese
             </ul>
           )}
         </Card>
-        <Card>
-          <div className="card-head"><h2>This month, in words</h2></div>
-          <div className="insights">
-            {data.facts.length === 0 ? <p className="muted">Nothing to report yet.</p> : data.facts.map((f, i) => <div className="insight" key={i}><span className="badge">Fact</span><div>{f}</div></div>)}
-          </div>
-        </Card>
       </div>
+
+      <Card>
+        <div className="card-head"><h2>This month, in words</h2>{data.facts.length > 3 && <button className="btn small" aria-expanded={allFacts} onClick={() => setAllFacts((v) => !v)}>{allFacts ? 'Show fewer' : `See all ${data.facts.length}`}</button>}</div>
+        <div className="insights">
+          {data.facts.length === 0 ? <p className="muted">Nothing to report yet.</p> : (allFacts ? data.facts : data.facts.slice(0, 3)).map((f, i) => <div className="insight" key={i}><span className="badge">Fact</span><div>{f}</div></div>)}
+        </div>
+      </Card>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button className="btn" onClick={() => goto('budget')}>Household budgets</button>

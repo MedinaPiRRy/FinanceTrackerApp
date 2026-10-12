@@ -8,6 +8,9 @@ import { daysBetween } from '../core/dates'
 export function pairTransfers(db: Db, profileId: number): number {
   const open = db.prepare(`SELECT id, account_id AS acc, posted_date AS d, amount_cents AS c FROM txn WHERE profile_id = ? AND kind = 'transfer' AND transfer_group IS NULL ORDER BY posted_date, id`).all(profileId) as { id: number; acc: number; d: string; c: number }[]
   const used = new Set<number>()
+  // only rows with the opposite amount can pair, so look them up by amount instead of comparing every row with every other row
+  const byAmount = new Map<number, (typeof open)[number][]>()
+  for (const r of open) (byAmount.get(r.c) ?? byAmount.set(r.c, []).get(r.c)!).push(r)
   const set = db.prepare('UPDATE txn SET transfer_group = ? WHERE id = ?')
   let pairs = 0
   db.transaction(() => {
@@ -15,7 +18,7 @@ export function pairTransfers(db: Db, profileId: number): number {
       if (used.has(a.id)) continue
       let best: (typeof open)[number] | undefined
       let bestDist = Infinity
-      for (const b of open) {
+      for (const b of byAmount.get(-a.c) ?? []) {
         if (b.id === a.id || used.has(b.id) || b.acc === a.acc || b.c !== -a.c) continue
         const dist = Math.abs(daysBetween(a.d, b.d))
         if (dist <= 7 && dist < bestDist) { best = b; bestDist = dist }

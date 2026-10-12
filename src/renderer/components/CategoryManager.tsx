@@ -3,11 +3,13 @@ import { api } from '../api'
 import { Card, ErrorBox, Segmented } from './ui'
 import type { CategoryRow } from '../../db/categoriesManage'
 import type { BudgetRow } from '../../db/budgets'
+import type { Page, TxnPreset } from '../App'
+import { PagedItems } from './Pager'
 
 type Kind = 'expense' | 'income'
 
 /** Add, rename and delete the categories transactions are filed under, and choose which budget a spending category counts toward. */
-export function CategoryManager({ profileId, onChanged }: { profileId: number; onChanged: () => void }) {
+export function CategoryManager({ profileId, onChanged, goto }: { profileId: number; onChanged: () => void; goto?: (p: Page, preset?: TxnPreset) => void }) {
   const [rows, setRows] = useState<CategoryRow[] | null>(null)
   const [budgets, setBudgets] = useState<BudgetRow[]>([])
   const [kind, setKind] = useState<Kind>('expense')
@@ -51,10 +53,11 @@ export function CategoryManager({ profileId, onChanged }: { profileId: number; o
       </div>
 
       {rows === null ? <p className="muted">Loading…</p> : shown.length === 0 ? <p className="muted">No {kind === 'expense' ? 'spending' : 'income'} categories yet.</p> : (
-        <div className="table-wrap"><table>
-          <thead><tr><th>Name</th><th className="r">Transactions</th>{kind === 'expense' && <th>Budget</th>}{kind === 'expense' && <th>Counts as</th>}<th></th></tr></thead>
+        <PagedItems items={shown} name={`categories-${kind}`} noun="Categories">{(pg) => (
+<div className="table-wrap"><table>
+          <thead><tr><th>Name</th><th className="r">Transactions</th>{kind === 'expense' && <th>Budget</th>}<th>Counts as</th><th></th></tr></thead>
           <tbody>
-            {shown.map((c) => (
+            {pg.map((c) => (
               <tr key={c.id}>
                 <td>
                   {editing === c.id ? (
@@ -75,15 +78,16 @@ export function CategoryManager({ profileId, onChanged }: { profileId: number; o
                     </select>
                   </td>
                 )}
-                {kind === 'expense' && (
+                {(
                   <td>
                     <select aria-label={`Counts as, for ${c.name}`} value={c.purpose ?? ''} onChange={(e) => void run(() => api('categorySetPurpose', profileId, c.id, e.target.value ? (e.target.value as 'tax' | 'interest' | 'none') : null), 'Updated.')}>
-                      <option value="">{c.effectivePurpose === 'none' ? 'Ordinary spending' : `Auto: ${c.effectivePurpose === 'tax' ? 'Taxes' : 'Interest'}`}</option>
-                      <option value="tax">Taxes</option><option value="interest">Interest</option><option value="none">Neither</option>
+                      <option value="">{c.effectivePurpose === 'none' ? (kind === 'income' ? 'Ordinary income' : 'Ordinary spending') : `Auto: ${c.effectivePurpose === 'tax' ? 'Taxes' : 'Interest'}${kind === 'income' ? ' (received)' : ''}`}</option>
+                      <option value="tax">{kind === 'income' ? 'Taxes (received)' : 'Taxes'}</option><option value="interest">{kind === 'income' ? 'Interest (received)' : 'Interest'}</option><option value="none">Neither</option>
                     </select>
                   </td>
                 )}
                 <td className="r" style={{ whiteSpace: 'nowrap' }}>
+                  {goto && <><button className="btn small" aria-label={`See the transactions in ${c.name}`} title="See, move, edit or delete the transactions filed here" onClick={() => goto('transactions', { categoryId: c.id })}>Transactions</button>{' '}</>}
                   <button className="btn small" aria-label={`Rename ${c.name}`} onClick={() => { setEditing(c.id); setEditName(c.name); setDeleting(null) }}>Rename</button>{' '}
                   {moving === c.id ? (
                     <select autoFocus aria-label={`Move ${c.name} under`} defaultValue="" onChange={(e) => void run(async () => { await api('categorySetParent', profileId, c.id, e.target.value === 'none' ? null : Number(e.target.value)); setMoving(null) }, 'Moved.')} onBlur={() => setMoving(null)}>
@@ -98,6 +102,7 @@ export function CategoryManager({ profileId, onChanged }: { profileId: number; o
             ))}
           </tbody>
         </table></div>
+)}</PagedItems>
       )}
 
       {deletingRow && (

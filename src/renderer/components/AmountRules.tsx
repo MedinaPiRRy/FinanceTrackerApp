@@ -4,18 +4,21 @@ import { Card, ErrorBox } from './ui'
 import { formatCents } from '../format'
 import type { AmountRule } from '../../db/amountRules'
 import type { CategoryInfo } from '../../db/queries'
+import { PagedItems } from './Pager'
+import { toCents as moneyToCents } from '../../core/money'
 
 interface Form { id: number | null; name: string; words: string; limit: string; low: string; high: string }
 const BLANK: Form = { id: null, name: '', words: '', limit: '30', low: '', high: '' }
 
 /** "At gas stations, up to $30 is snacks and drinks, more than that is gas": a category that depends on how much was spent. */
-export function AmountRules({ profileId, onChanged }: { profileId: number; onChanged: () => void }) {
+export function AmountRules({ profileId, onChanged, workbookRows }: { profileId: number; onChanged: () => void; /** Offer to re-file rows that came from the Excel workbook too (personal app). */ workbookRows?: boolean }) {
   const [rules, setRules] = useState<AmountRule[] | null>(null)
   const [cats, setCats] = useState<CategoryInfo[]>([])
   const [form, setForm] = useState<Form | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [refile, setRefile] = useState(false)
+  const [inWorkbook, setInWorkbook] = useState(false)
   const [preview, setPreview] = useState<{ id: number; matched: number; changed: number } | null>(null)
 
   const load = useCallback(() => {
@@ -29,13 +32,13 @@ export function AmountRules({ profileId, onChanged }: { profileId: number; onCha
   }
   const save = () => {
     if (!form) return
-    const limit = Math.round(Number(form.limit) * 100)
+    const limit = moneyToCents(Number(form.limit))
     if (!form.limit.trim() || Number.isNaN(limit)) return setError('Enter the amount as a number, e.g. 30')
     const input = { name: form.name, words: form.words.split(/[,\n]/), limitCents: limit, lowCategoryId: Number(form.low), highCategoryId: Number(form.high) }
     void run(async () => { if (form.id === null) await api('amountRuleCreate', profileId, input); else await api('amountRuleUpdate', profileId, form.id, input); setForm(null) }, 'Rule saved. Use “Apply” to file purchases already waiting for a category.')
   }
   const check = async (id: number) => {
-    try { const r = await api('amountRuleApply', profileId, id, { includeCategorised: refile }); setPreview({ id, ...r }); setError(null) } catch (e) { setError((e as Error).message) }
+    try { const r = await api('amountRuleApply', profileId, id, { includeCategorised: refile, includeWorkbook: inWorkbook }); setPreview({ id, ...r }); setError(null) } catch (e) { setError((e as Error).message) }
   }
 
   return (
@@ -45,9 +48,10 @@ export function AmountRules({ profileId, onChanged }: { profileId: number; onCha
       <ErrorBox error={error} />
       {msg && <div className="notice" role="status">{msg}</div>}
       {rules && rules.length > 0 && (
-        <div className="table-wrap"><table>
+        <PagedItems items={rules} name="amount-rules" noun="Rules">{(pg) => (
+<div className="table-wrap"><table>
           <thead><tr><th>Rule</th><th>Up to the amount</th><th>More than the amount</th><th></th></tr></thead>
-          <tbody>{rules.map((r) => (
+          <tbody>{pg.map((r) => (
             <tr key={r.id}>
               <td>{r.name}<div className="muted" style={{ fontSize: 12 }}>{r.words.join(', ')}</div></td>
               <td>{formatCents(r.limitCents)} or less → {r.lowCategory}</td>
@@ -60,13 +64,15 @@ export function AmountRules({ profileId, onChanged }: { profileId: number; onCha
             </tr>
           ))}</tbody>
         </table></div>
+)}</PagedItems>
       )}
       {preview && (
         <div className="review-card" role="group" aria-label="Apply this rule to existing purchases">
           <p className="sub" style={{ margin: 0 }}>{preview.changed === 0 ? 'Nothing needs changing.' : `${preview.changed.toLocaleString()} purchase${preview.changed === 1 ? '' : 's'} would be filed by this rule.`} {refile ? '' : 'Only purchases still waiting for a category are looked at.'}</p>
           <label className="check"><input type="checkbox" checked={refile} onChange={(e) => { setRefile(e.target.checked); setPreview(null) }} /> Also re-file bank purchases the app already categorised on its own (anything you filed yourself stays)</label>
+          {workbookRows && <label className="check"><input type="checkbox" checked={inWorkbook} onChange={(e) => { setInWorkbook(e.target.checked); setPreview(null) }} /> Also re-file purchases that came from my Excel workbook (the Excel page will list them as changed after the sync; the workbook itself is not edited)</label>}
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn primary" disabled={preview.changed === 0} onClick={() => void run(async () => { const r = await api('amountRuleApply', profileId, preview.id, { includeCategorised: refile, apply: true }); setPreview(null); setMsg(`${r.changed.toLocaleString()} purchase${r.changed === 1 ? '' : 's'} filed.`) })}>Apply</button>
+            <button className="btn primary" disabled={preview.changed === 0} onClick={() => void run(async () => { const r = await api('amountRuleApply', profileId, preview.id, { includeCategorised: refile, includeWorkbook: inWorkbook, apply: true }); setPreview(null); setMsg(`${r.changed.toLocaleString()} purchase${r.changed === 1 ? '' : 's'} filed.`) })}>Apply</button>
             <button className="btn" onClick={() => setPreview(null)}>Close</button>
           </div>
         </div>

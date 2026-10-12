@@ -2,7 +2,7 @@
 // Balance convention for every account: opening_balance_cents + SUM(amount_cents).
 //   Chequing/savings: positive = money you have.
 //   Credit card:      negative = money owed (a charge is a negative amount, a payment is positive).
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 /** 'household' is a pseudo-profile that owns the accounts you share (and their transactions). */
 export const V4_PROFILE_COLUMN = `,
@@ -98,6 +98,14 @@ CREATE TABLE debt_payment (
   applied_cents  INTEGER NOT NULL DEFAULT 0,       -- how much this payment lowered the loan's balance (0 = already reflected)
   created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
+`
+
+/** Taxes and interest chosen for one payment, and accounts taken out of the Taxes & interest page. */
+export const COST_MARKS = `
+-- 'tax' or 'interest' counts this payment on the Taxes & interest page; 'none' leaves it out; NULL = decided automatically (its mark beats its category and account).
+ALTER TABLE txn ADD COLUMN cost_purpose TEXT CHECK (cost_purpose IN ('tax','interest','none'));
+-- 1 = payments in this account are not counted on the Taxes & interest page (payments marked one by one still are).
+ALTER TABLE account ADD COLUMN costs_excluded INTEGER NOT NULL DEFAULT 0;
 `
 
 /** Subcategories, "taxes / interest" tags, rules that depend on the amount, and things the person owns (net worth). */
@@ -278,9 +286,11 @@ CREATE TABLE setting (
 );
 ${SOURCE_RULE_TABLE}
 ${FEATURE_TABLES}
+${COST_MARKS}
 `
 
 /** SQL for upgrading a database from version N-1 to N. Empty until the first schema change after release. */
 export const MIGRATIONS: Record<number, { guard: string[]; sql: string }> = {
-  2: { guard: [], sql: SOURCE_RULE_TABLE + FEATURE_TABLES }
+  2: { guard: [], sql: SOURCE_RULE_TABLE + FEATURE_TABLES },
+  3: { guard: [], sql: COST_MARKS }
 }

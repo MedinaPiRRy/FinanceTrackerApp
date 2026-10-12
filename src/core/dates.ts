@@ -2,8 +2,15 @@
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
 
+/** True for a real calendar date written YYYY-MM-DD (2028-02-29 yes; 2026-02-30 and 2026-13-01 no). */
+export function isRealIsoDate(d: unknown): d is string {
+  if (typeof d !== 'string' || !ISO.test(d)) return false
+  const t = new Date(`${d}T00:00:00Z`)
+  return !Number.isNaN(t.getTime()) && t.toISOString().slice(0, 10) === d
+}
+
 export function assertIso(d: string): string {
-  if (!ISO.test(d)) throw new Error(`Not an ISO date: ${d}`)
+  if (!ISO.test(d)) throw new Error(`Not an ISO date: ${d}`) // shape only: this runs for every row in hot loops, so the full calendar check is kept for typed input (isRealIsoDate)
   return d
 }
 

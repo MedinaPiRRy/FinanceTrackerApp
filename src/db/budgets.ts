@@ -24,7 +24,7 @@ export function createBudget(db: Db, profileId: number, name: string, monthlyCen
   const clean = name.trim()
   if (!clean) throw new Error('Give the budget a name')
   if (!Number.isInteger(monthlyCents) || monthlyCents < 0) throw new Error('The monthly amount cannot be negative')
-  if (db.prepare('SELECT 1 FROM budget WHERE profile_id = ? AND name = ? COLLATE NOCASE').get(profileId, clean)) throw new Error(`There is already a budget called "${clean}"`)
+  if (db.prepare('SELECT 1 FROM budget WHERE profile_id = ? AND fold(name) = fold(?)').get(profileId, clean)) throw new Error(`There is already a budget called "${clean}"`)
   return db.transaction(() => {
     checkCategories(db, profileId, categoryIds)
     const id = Number(db.prepare('INSERT INTO budget (profile_id, name, monthly_cents) VALUES (?,?,?)').run(profileId, clean, monthlyCents).lastInsertRowid)
@@ -43,7 +43,7 @@ export function updateBudget(db: Db, profileId: number, id: number, patch: { nam
     if (patch.name !== undefined) {
       const clean = patch.name.trim()
       if (!clean) throw new Error('Give the budget a name')
-      if (db.prepare('SELECT 1 FROM budget WHERE profile_id = ? AND name = ? COLLATE NOCASE AND id <> ?').get(profileId, clean, id)) throw new Error(`There is already a budget called "${clean}"`)
+      if (db.prepare('SELECT 1 FROM budget WHERE profile_id = ? AND fold(name) = fold(?) AND id <> ?').get(profileId, clean, id)) throw new Error(`There is already a budget called "${clean}"`)
       db.prepare('UPDATE budget SET name = ? WHERE id = ?').run(clean, id)
     }
     if (patch.monthlyCents !== undefined) {

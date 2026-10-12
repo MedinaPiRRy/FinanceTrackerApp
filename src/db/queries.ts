@@ -61,6 +61,8 @@ export interface TxnFilter {
   offset?: number
 }
 export interface TxnRow {
+  /** What the person chose for this payment on the Taxes & interest page ('tax', 'interest', 'none'), or null when it is judged automatically. */
+  costPurpose: 'tax' | 'interest' | 'none' | null
   id: number
   date: string
   description: string
@@ -131,7 +133,7 @@ export function createCategory(db: Db, profileId: number, name: string, kind: 'e
     if (p.parentId !== null) throw new Error('A subcategory cannot have subcategories of its own. Add it under the main category.')
     parent = { id: p.id, name: p.name }
   }
-  const existing = db.prepare('SELECT c.id, c.name, c.kind, c.parent_id AS parentId FROM category c WHERE c.profile_id = ? AND c.kind = ? AND c.name = ? COLLATE NOCASE').get(profileId, kind, clean) as { id: number; name: string; kind: 'expense' | 'income'; parentId: number | null } | undefined
+  const existing = db.prepare('SELECT c.id, c.name, c.kind, c.parent_id AS parentId FROM category c WHERE c.profile_id = ? AND c.kind = ? AND fold(c.name) = fold(?)').get(profileId, kind, clean) as { id: number; name: string; kind: 'expense' | 'income'; parentId: number | null } | undefined
   if (existing) {
     if ((existing.parentId ?? null) !== (parent?.id ?? null)) throw new Error(`There is already a category called "${existing.name}"${existing.parentId !== null ? ' (a subcategory)' : ''}. Pick another name.`)
     return { id: existing.id, name: existing.name, kind: existing.kind, parentId: existing.parentId, parentName: parent?.name ?? null, label: parent ? `${parent.name} › ${existing.name}` : existing.name }
@@ -183,7 +185,7 @@ export function queryTxns(db: Db, profileIds: number | number[], f: TxnFilter = 
       `SELECT t.id, t.posted_date AS date, t.description, t.amount_cents AS amountCents, t.account_id AS accountId, a.name AS account,
               t.category_id AS categoryId, CASE WHEN pc.name IS NULL THEN c.name ELSE pc.name || ' › ' || c.name END AS category, t.kind, t.review_reason AS reviewReason, t.notes, t.source, t.transfer_group AS transferGroup,
               t.profile_id AS profileId, pr.name AS person, cp.name AS counterparty,
-              t.currency, t.original_cents AS originalCents, t.fx_rate AS fxRate, dp.debt_id AS debtId, ld.name AS debtName
+              t.cost_purpose AS costPurpose, t.currency, t.original_cents AS originalCents, t.fx_rate AS fxRate, dp.debt_id AS debtId, ld.name AS debtName
        ${from} WHERE ${inlineW} ORDER BY ${order} LIMIT @limit OFFSET @offset`
     )
     .all({ ...named, limit: f.limit ?? 200, offset: f.offset ?? 0 }) as TxnRow[]
@@ -323,7 +325,9 @@ export function getDashboard(db: Db, profileId: number, requestedMonth?: string,
   const real = rows.filter((r) => !reversed.has(r.id))
   const months = [...new Set(rows.map((r) => monthKey(r.date)))].sort()
   const month = requestedMonth && months.includes(requestedMonth) ? requestedMonth : months[months.length - 1]!
-  const series = months.map((m) => summarizeMonth(rows, m))
+  const byMonth = new Map<string, typeof rows>() // grouped once: scanning every row once per month was the slow part
+  for (const r of rows) { const k = monthKey(r.date); (byMonth.get(k) ?? byMonth.set(k, []).get(k)!).push(r) }
+  const series = months.map((m) => summarizeMonth(byMonth.get(m) ?? [], m))
   const get = (m: string) => series.find((s) => s.month === m) ?? null
   const prior = series.filter((s) => s.month < month).slice(-12)
   const accounts = listAccounts(db, profileId).filter((a) => !a.archived)

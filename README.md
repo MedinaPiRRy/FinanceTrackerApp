@@ -6,6 +6,8 @@ A private personal and household finance tracker for the desktop. It runs entire
 Track your own money, track you and a partner side by side, or add a shared household on top
 (joint accounts, a household budget and shared goals, with each person's share always visible).
 
+**New here? Read the [instructions](INSTRUCTIONS.md)** (also as a single page you can open in any browser: [INSTRUCTIONS.html](INSTRUCTIONS.html)).
+
 ![Household overview](docs/screenshots/household-overview.png)
 
 **Canada-first.** Amounts are in Canadian dollars. The bank file formats (including CIBC's), the merchant keywords and the e-transfer handling are tuned for Canada. Statements from other banks import through the column mapper, but you will fix more categories by hand, and other currencies are not supported except for cash tips.
@@ -58,7 +60,12 @@ downloaded from your bank (CSV or Excel). The importer:
 - **Dashboard** with income, spending, net, savings rate, comparison with previous months and insights.
 - **Budgets** you can build yourself or generate with **Suggest budgets from my last 3 months**, which shows the averages, rounds up to tidy limits, and lets you edit before anything is created. **Goals** (savings targets, paying off cards and loans, spending toward something) with the monthly amount needed.
 - **Subcategories**: put Perfumes under Health & Beauty or Gas under Transportation. They count toward the main category in budgets, charts, the forecast and goals, and you still see them on their own. **Rules by amount** file a purchase by how much it was (at gas stations, up to $30 is snacks and drinks, more is gas).
-- **Loan detail**: click a loan to see every payment counted toward it, how much is paid off, the pace and a chart. **Taxes & interest** has its own page with totals by month and year. **Net worth** includes a house, car, stocks or anything else you add, valued by hand with a history.
+- **Loan detail**: click a loan to see every payment counted toward it, how much is paid off, the pace and a chart. **Net worth** includes a house, car, stocks or anything else you add, valued by hand with a history.
+- **Taxes & interest** (its own page): what you paid and what you received in each, by month and year, with a chart and the net. Money in counts too: a GST/HST credit or a government payment that is part of your taxes shows as *received*, and a refund reduces what you paid. Click any figure, category or account to see the payments behind it (50 at a time). Any payment can be counted as taxes or interest (like choosing a category, from the page or from the Transactions page's *Taxes & interest* action), **left out** with one click, or put back; a whole category or a whole account can be taken out as well, and everything you left out is listed under *Left out* so nothing disappears quietly. Bank fees are not counted as interest: only lines that say interest, categories you mark, and payments you mark.
+- **Move, edit or delete many transactions at once**: tick rows on the Transactions page (or open a category's transactions from Settings → Categories) and move them to another category or subcategory, rename the merchant, change the type, mark them as taxes or interest, or delete them after a confirmation that says how many.
+- **Goals open up**: click a goal, or a card or loan in the debt payoff planner, to see how many transactions count toward it and how much, with the list underneath.
+- **Fifty rows at a time**: every list and table shows 50 rows with page controls, and remembers the page when you come back with Back.
+- **Back and forward**: the Back button returns to the previous page exactly as you left it.
 - **Accounts**: chequing, savings, credit cards, loans, cash, and investments valued by hand. Add, rename, close, or mark an account as shared.
 - **Cash and tips**: record cash you earn and spend outside the bank.
 - **Recurring payments found for you**: the app spots subscriptions, rent, utilities and pay in your transactions (steady schedule, steady amount; groceries and other changing amounts are left out), offers to track them, and asks "was it cancelled?" when one stops appearing. It only asks when your data goes past the due date, so a statement you have not imported yet never triggers a question.
@@ -68,13 +75,13 @@ downloaded from your bank (CSV or Excel). The importer:
 - **Insights** you can open: each one explains what it means in plain words and shows the transactions, budget or goal behind it. A tip also appears as a banner when you open the app.
 - **Cash tips in other currencies**: enter the amount, the currency and the rate you got; the CAD value counts, and the original stays visible. (Bank transactions are already converted by your bank.)
 - A **monthly review**.
-- Light and dark themes. Everything works offline.
+- **Eight app styles** (Settings → Appearance): Light, Dark, Business, GirlMath, Programmer, Cozy, Casual and ADHD (calm, with strong colour only for what needs attention), or Match system. Each is previewed in its own colours and applies instantly; charts follow it, and the choice is saved and in place from the first paint. Every style passes contrast checks (tests fail if a colour change breaks readability). Everything works offline.
 
 ## How correctness is protected
 
 Money is stored as integer cents, never floating point. Balances are `opening balance + sum of transactions`, so they
 can always be checked by hand. Transfers between your own accounts are two linked rows that net to zero and never
-count as income or spending. Calculations live in a small, deterministic core covered by close to 300 automated tests. The database upgrades itself with an automatic backup and a guard that refuses to drop tables holding data.
+count as income or spending. Calculations live in a small, deterministic core covered by close to 600 automated tests, including tests that try hostile input on every handler and a 100,000-transaction speed check. The database upgrades itself with an automatic backup and a guard that refuses to drop tables holding data.
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Run it from source
@@ -110,14 +117,18 @@ and attach them to a release.
 | Linux | `~/.config/FinanceTracker` |
 
 `finance.db` is your data, `sample.db` exists only while sample data is open, and `backups/` holds copies made by
-**Settings → Back up my data now** (or automatically each day, if you turn that on).
+**Settings → Back up my data now** and **automatically once a day (the last 10 are kept, on by default; change or turn it off under General)**.
+Manual backups keep the newest 30. **Settings → Backup & data → Restore from a backup** lists them and puts one back (you type RESTORE; your current
+data is saved first as a "before a restore" copy, so a restore can be undone). While sample data is open its backups go to a separate `sample-backups/`
+folder, never to the restore list. Copies made before a database upgrade (`finance.db.bak-v…`, the newest 3 are kept) sit next to the database.
 
 **Accounts** can be matched to your bank ("Match my bank's balance" sets the starting balance so the two agree), duplicate transactions held by two accounts are found for you to remove, and a payment can count toward a loan you track (for example a student loan), lowering its balance.
 
-**Settings** also lets you rename people, choose the page the app opens on, add, rename and delete categories (and pick each
-spending category's budget), add, edit and delete accounts, move between *just me*, *me and my partner* and *plus a shared
+**Settings** is a list of sections (General, Appearance, Categories, Rules by amount, Accounts, People & setup, Remembered sources, Backup & data); each opens on its own and the Back button works.
+It also lets you rename people, choose the page the app opens on, add, rename, move and delete categories and subcategories (and pick each
+spending category's budget, and what each counts as on the Taxes & interest page), add, edit and delete accounts, move between *just me*, *me and my partner* and *plus a shared
 household*, export every transaction to CSV, and erase all your data or delete the app and its data (you type a word to confirm,
-and can keep one backup copy).
+and can keep one backup copy: erasing removes every other backup, upgrade copy and the sample database too).
 
 ## Starting from zero
 

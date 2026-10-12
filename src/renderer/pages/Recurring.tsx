@@ -5,6 +5,8 @@ import { formatCents, pct } from '../format'
 import { ErrorBox } from '../components/ui'
 import type { AccountInfo, Profile, RecurringRow } from '../../db/queries'
 import type { RecurringSuggestion, StoppedItem } from '../../db/recurringDetect'
+import { PagedItems } from '../components/Pager'
+import { toCents as moneyToCents } from '../../core/money'
 
 const FREQ: Record<string, string> = { weekly: 'Weekly', biweekly: 'Every 2 weeks', semimonthly: 'Twice a month', monthly: 'Monthly', quarterly: 'Every 3 months', yearly: 'Yearly', irregular: 'Irregular' }
 
@@ -14,10 +16,11 @@ function Table({ rows, title, note, onEdit, onDelete }: { rows: RecurringRow[]; 
   return (
     <Card>
       <div className="card-head"><h2>{title}</h2>{note && <span className="muted">{note}</span>}</div>
-      <div className="table-wrap"><table>
+      <PagedItems items={rows} name={`recurring-${title}`} noun="Items">{(pg) => (
+<div className="table-wrap"><table>
         <thead><tr><th>Item</th><th>Paid with</th><th>How often</th><th className="r">Amount</th><th className="r">Per month</th><th className="r">Per year</th><th>Status</th><th></th></tr></thead>
         <tbody>
-          {rows.map((r) => (
+          {pg.map((r) => (
             <tr key={r.id} style={r.status === 'cancelled' ? { opacity: 0.6 } : undefined}>
               <td>{r.name}{r.refunded && <div className="muted">The bank pays this back each time, so it costs nothing.</div>}{r.notes && <div className="muted">{r.notes}</div>}</td>
               <td>{r.account ?? r.paidWith ?? '—'}</td>
@@ -32,6 +35,7 @@ function Table({ rows, title, note, onEdit, onDelete }: { rows: RecurringRow[]; 
           <tr><td colSpan={4}><b>Total counted</b></td><td className="r num"><b>{formatCents(counted.reduce((s, r) => s + r.monthlyCents, 0))}</b></td><td className="r num"><b>{formatCents(counted.reduce((s, r) => s + r.annualCents, 0))}</b></td><td colSpan={2}></td></tr>
         </tbody>
       </table></div>
+)}</PagedItems>
     </Card>
   )
 }
@@ -142,10 +146,11 @@ function Attention({ profile, onChanged }: { profile: Profile; onChanged: () => 
         <Card>
           <div className="card-head"><h2>Found {found.length} regular payment{found.length === 1 ? '' : 's'}</h2></div>
           <p className="sub" style={{ marginTop: 0 }}>These repeat on a steady schedule for a steady amount, but are not in your list yet. Tick the ones you want to track. Shopping that varies every time (groceries, fuel) is left out on purpose.</p>
-          <div className="table-wrap"><table>
+          <PagedItems items={found} name="recurring-found" noun="Payments">{(pg) => (
+<div className="table-wrap"><table>
             <thead><tr><th></th><th>Name</th><th>How often</th><th className="r">Amount</th><th>Paid from</th><th>Seen</th><th></th></tr></thead>
             <tbody>
-              {found.map((f) => (
+              {pg.map((f) => (
                 <tr key={id(f)}>
                   <td><input type="checkbox" aria-label={`Track ${f.name}`} checked={picked.has(id(f))} onChange={(e) => setPicked((p) => { const n = new Set(p); if (e.target.checked) n.add(id(f)); else n.delete(id(f)); return n })} /></td>
                   <td><input aria-label={`Name for ${f.name}`} value={names[id(f)] ?? f.name} onChange={(e) => setNames({ ...names, [id(f)]: e.target.value })} style={{ width: 200 }} />{f.direction === 'income' && <span className="badge accent" style={{ marginLeft: 6 }}>Income</span>}</td>
@@ -158,6 +163,7 @@ function Attention({ profile, onChanged }: { profile: Profile; onChanged: () => 
               ))}
             </tbody>
           </table></div>
+)}</PagedItems>
           <div style={{ marginTop: 12 }}>
             <button className="btn primary" disabled={chosen.length === 0} onClick={() => void run(() => api('recurringAdd', profile.id, chosen.map((f) => ({ key: f.key, direction: f.direction, name: names[id(f)] }))))}>Track {chosen.length} selected</button>
           </div>
@@ -183,7 +189,7 @@ export function Recurring({ profile, accounts, onChanged }: { profile: Profile; 
   const edit = (r: RecurringRow) => { setFormError(null); setDraft({ id: r.id, name: r.name, direction: r.direction as 'income' | 'expense', accountId: r.accountId ? String(r.accountId) : '', amount: (r.amountCents / 100).toFixed(2), frequency: r.frequency, counts: r.countsInBudget, notes: r.notes ?? '', status: r.status === 'cancelled' ? 'cancelled' : 'active' }) }
   const save = async () => {
     if (!draft) return
-    const input = { name: draft.name, direction: draft.direction, accountId: draft.accountId ? Number(draft.accountId) : null, amountCents: Math.round(Number(draft.amount) * 100), frequency: draft.frequency as never, countsInBudget: draft.counts, notes: draft.notes || null }
+    const input = { name: draft.name, direction: draft.direction, accountId: draft.accountId ? Number(draft.accountId) : null, amountCents: moneyToCents(Number(draft.amount)), frequency: draft.frequency as never, countsInBudget: draft.counts, notes: draft.notes || null }
     try {
       if (draft.id === null) await api('recurringCreate', profile.id, input)
       else await api('recurringUpdate', profile.id, draft.id, { ...input, status: draft.status })

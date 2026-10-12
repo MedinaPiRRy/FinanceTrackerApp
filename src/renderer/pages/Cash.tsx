@@ -3,9 +3,11 @@ import { api } from '../api'
 import { Card, ErrorBox, Toast } from '../components/ui'
 import { formatCents, today } from '../format'
 import type { AccountInfo, CategoryInfo, Profile, RecurringRow, TxnRow } from '../../db/queries'
+import { PagedItems } from '../components/Pager'
+import { toCents as moneyToCents } from '../../core/money'
 
 interface CashData { balanceCents: number; entries: TxnRow[]; cashBills: RecurringRow[] }
-const toCents = (v: string) => Math.round(Number(v) * 100)
+const toCents = (v: string) => moneyToCents(Number(v))
 const validNum = (v: string) => v.trim() !== '' && Number(v) > 0
 const CURRENCIES = ['CAD', 'USD', 'EUR', 'GBP', 'MXN', 'AUD', 'JPY']
 
@@ -113,10 +115,11 @@ export function Cash({ profile, accounts, categories, onChanged }: { profile: Pr
         <Card>
           <div className="card-head"><h2>Bills paid in cash</h2><label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>Payment date<input type="date" value={billDate} onChange={(e) => setBillDate(e.target.value)} /></label></div>
           <p className="muted" style={{ marginTop: 0 }}>These never appear on a bank statement. Record each month's payment so it shows in your spending.</p>
-          <div className="table-wrap"><table>
+          <PagedItems items={data.cashBills} name="cash-bills" noun="Bills">{(pg) => (
+<div className="table-wrap"><table>
             <thead><tr><th>Bill</th><th className="r">Amount</th><th>Category</th><th></th></tr></thead>
             <tbody>
-              {data.cashBills.map((b) => (
+              {pg.map((b) => (
                 <tr key={b.id}>
                   <td>{b.name}<div className="muted">{b.frequency}</div></td>
                   <td className="r num">{formatCents(b.amountCents)}</td>
@@ -126,6 +129,7 @@ export function Cash({ profile, accounts, categories, onChanged }: { profile: Pr
               ))}
             </tbody>
           </table></div>
+)}</PagedItems>
         </Card>
       )}
 
@@ -133,10 +137,11 @@ export function Cash({ profile, accounts, categories, onChanged }: { profile: Pr
       <Card>
         <div className="card-head"><h2>Recent cash activity</h2></div>
         {data.entries.length === 0 ? <p className="muted">Nothing recorded yet. Add your first day of tips above.</p> : (
-          <div className="table-wrap"><table>
+          <PagedItems items={data.entries} name="cash-entries" noun="Entries">{(pg) => (
+<div className="table-wrap"><table>
             <thead><tr><th>Date</th><th>What</th><th>Note</th><th className="r">Amount</th><th></th></tr></thead>
             <tbody>
-              {data.entries.map((e) => (
+              {pg.map((e) => (
                 <tr key={e.id}>
                   <td className="num">{e.date}</td><td>{e.description}</td><td className="muted">{e.notes}</td>
                   <td className={`r num ${e.amountCents > 0 ? 'pos' : ''}`}>{formatCents(e.amountCents, { sign: true })}{e.currency && e.originalCents !== null && <div className="muted" style={{ fontSize: 12 }}>{(e.originalCents / 100).toLocaleString('en-CA', { minimumFractionDigits: 2 })} {e.currency} @ {e.fxRate}</div>}</td>
@@ -145,6 +150,7 @@ export function Cash({ profile, accounts, categories, onChanged }: { profile: Pr
               ))}
             </tbody>
           </table></div>
+)}</PagedItems>
         )}
       </Card>
       <Toast message={toast} />

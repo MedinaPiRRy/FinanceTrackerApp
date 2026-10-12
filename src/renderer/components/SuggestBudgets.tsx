@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Card, ErrorBox, Icon } from './ui'
 import { formatCents, monthLabel } from '../format'
+import { PagedItems } from './Pager'
+import { toCents as moneyToCents } from '../../core/money'
 
 export interface Suggestion { key: string; name: string; averageCents: number; suggestedCents: number; highestCents: number; monthsWithSpending: number }
 
@@ -32,7 +34,7 @@ export function SuggestBudgets({ load, create, onCreated, hint }: {
     } catch (e) { setError((e as Error).message) }
     setBusy(false)
   }
-  const cents = (key: string) => Math.round(Number(limits[key]) * 100)
+  const cents = (key: string) => moneyToCents(Number(limits[key]))
   const valid = (key: string) => limits[key] !== undefined && limits[key] !== '' && !Number.isNaN(Number(limits[key])) && Number(limits[key]) >= 0
   const chosen = data?.suggestions.filter((s) => picked.has(s.key)) ?? []
   const totalCents = chosen.reduce((a, s) => a + (valid(s.key) ? cents(s.key) : 0), 0)
@@ -68,10 +70,11 @@ export function SuggestBudgets({ load, create, onCreated, hint }: {
                 Based on {data.months.length === 1 ? 'one complete month' : `${data.months.length} complete months`} ({data.months.map(monthLabel).join(', ')}).
                 Each suggestion is the monthly average rounded up to the next $5, so a normal month stays inside it. Untick or change anything, then create. Nothing is saved until you do.
               </p>
-              <div className="table-wrap"><table>
+              <PagedItems items={data.suggestions} name="suggest-budgets" noun="Categories">{(pg) => (
+<div className="table-wrap"><table>
                 <thead><tr><th></th><th>Category</th><th className="r">Average / month</th><th className="r">Highest month</th><th className="r">Monthly budget ($)</th></tr></thead>
                 <tbody>
-                  {data.suggestions.map((s) => (
+                  {pg.map((s) => (
                     <tr key={s.key}>
                       <td><input type="checkbox" aria-label={`Include ${s.name}`} checked={picked.has(s.key)} onChange={(e) => setPicked((p) => { const n = new Set(p); if (e.target.checked) n.add(s.key); else n.delete(s.key); return n })} /></td>
                       <td>{s.name}{s.monthsWithSpending < data.months.length && <span className="muted"> · spent in {s.monthsWithSpending} of {data.months.length} months</span>}</td>
@@ -82,6 +85,7 @@ export function SuggestBudgets({ load, create, onCreated, hint }: {
                   ))}
                 </tbody>
               </table></div>
+)}</PagedItems>
               <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 14, flexWrap: 'wrap' }}>
                 <button className="btn primary" disabled={busy || chosen.length === 0} onClick={() => void submit()}>Create {chosen.length} budget{chosen.length === 1 ? '' : 's'}</button>
                 <span className="muted">Together {formatCents(totalCents)} a month.</span>

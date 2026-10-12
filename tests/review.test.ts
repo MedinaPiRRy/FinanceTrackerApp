@@ -101,7 +101,7 @@ describe('review queue', () => {
   it('cannot resolve a row twice', () => {
     const id = addTxn(p1, chq, '2026-03-01', 5000, 'x', 'unclassified', 'x')
     resolveReview(db, id, { kind: 'income', categoryId: incCat })
-    expect(() => resolveReview(db, id, { kind: 'income', categoryId: incCat })).toThrow(/not in the review queue/)
+    expect(() => resolveReview(db, id, { kind: 'income', categoryId: incCat })).toThrow(/not waiting in Review/)
   })
 })
 

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { Card, ErrorBox, Segmented } from './ui'
+import { usePaged, PagedItems } from './Pager'
 import { formatCents, monthLabel } from '../format'
 import type { PlannerState } from '../../db/debtPlan'
 import type { Strategy } from '../../core/debtPlan'
+import { toCents as moneyToCents } from '../../core/money'
 
 const STRATEGY: { value: Strategy; label: string; blurb: string }[] = [
   { value: 'avalanche', label: 'Highest interest first', blurb: 'Costs the least interest. Every extra dollar goes to the debt with the highest rate.' },
@@ -17,7 +19,7 @@ interface Draft { apr: Record<string, string>; min: Record<string, string>; stra
  * Debt payoff planner. It starts from defaults (typical card rates and minimums, your recent surplus) so it
  * works without any input, and everything can be edited; the result updates as you type. Nothing is saved until you press Save.
  */
-export function DebtPlanner({ profileId, onSaved }: { profileId: number; onSaved?: () => void }) {
+export function DebtPlanner({ profileId, onSaved, onOpen }: { profileId: number; onSaved?: () => void; /** Open the payments behind one card or loan. */ onOpen?: (d: { key: string; label: string }) => void }) {
   const [state, setState] = useState<PlannerState | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [dirty, setDirty] = useState(false)
@@ -36,9 +38,9 @@ export function DebtPlanner({ profileId, onSaved }: { profileId: number; onSaved
   useEffect(load, [profileId])
 
   const edits = (d: Draft, s: PlannerState) => ({
-    terms: s.debts.map((x) => ({ key: x.key, aprBps: Math.round(Number(d.apr[x.key]) * 100), minPaymentCents: Math.round(Number(d.min[x.key]) * 100) })).filter((t) => Number.isFinite(t.aprBps) && Number.isFinite(t.minPaymentCents)),
+    terms: s.debts.map((x) => ({ key: x.key, aprBps: moneyToCents(Number(d.apr[x.key])), minPaymentCents: moneyToCents(Number(d.min[x.key])) })).filter((t) => Number.isFinite(t.aprBps) && Number.isFinite(t.minPaymentCents)),
     strategy: d.strategy,
-    monthlyBudgetCents: d.budget === null || d.budget === '' ? null : Math.round(Number(d.budget) * 100)
+    monthlyBudgetCents: d.budget === null || d.budget === '' ? null : moneyToCents(Number(d.budget))
   })
 
   // live preview while editing
@@ -83,12 +85,13 @@ export function DebtPlanner({ profileId, onSaved }: { profileId: number; onSaved
         Owing {formatCents(total)} in total. It starts from typical rates and minimums and pays {formatCents(state.monthlyBudgetCents)} a month{state.surplusAfterGoalsCents !== null && state.surplusAfterGoalsCents > 0 && state.budgetIsDefault ? ` (about 60% of the ${formatCents(state.surplusAfterGoalsCents)} you have left each month after the money planned for goals, never less than the minimums)` : ''}. Change anything and the result updates.
       </p>
 
-      <div className="table-wrap"><table>
+      <PagedItems items={state.debts} name="planner-debts" noun="Debts">{(pg) => (
+<div className="table-wrap"><table>
         <thead><tr><th>Debt</th><th className="r">Owed</th><th className="r">Interest rate (% a year)</th><th className="r">Minimum payment ($/mo)</th></tr></thead>
         <tbody>
-          {state.debts.map((d) => (
+          {pg.map((d) => (
             <tr key={d.key}>
-              <td>{d.label}{d.owner && <span className="muted"> · {d.owner}</span>}<span className="muted"> · {d.kind === 'card' ? 'card' : 'loan'}</span></td>
+              <td>{onOpen ? <button className="txn-link" title="See the payments made on this" onClick={() => onOpen({ key: d.key, label: d.label })}>{d.label}</button> : d.label}{d.owner && <span className="muted"> · {d.owner}</span>}<span className="muted"> · {d.kind === 'card' ? 'card' : 'loan'}</span></td>
               <td className="r num">{formatCents(d.balanceCents)}</td>
               <td className="r"><input type="number" min="0" max="100" step="0.01" aria-label={`Interest rate for ${d.label}`} value={draft.apr[d.key] ?? ''} onChange={(e) => change({ apr: { ...draft.apr, [d.key]: e.target.value } })} style={{ width: 90, textAlign: 'right' }} />{d.aprIsDefault && !dirty && <div className="muted" style={{ fontSize: 11 }}>typical, change if you know it</div>}</td>
               <td className="r"><input type="number" min="0" step="5" aria-label={`Minimum payment for ${d.label}`} value={draft.min[d.key] ?? ''} onChange={(e) => change({ min: { ...draft.min, [d.key]: e.target.value } })} style={{ width: 90, textAlign: 'right' }} />{d.minIsDefault && !dirty && <div className="muted" style={{ fontSize: 11 }}>estimated</div>}</td>
@@ -96,6 +99,7 @@ export function DebtPlanner({ profileId, onSaved }: { profileId: number; onSaved
           ))}
         </tbody>
       </table></div>
+)}</PagedItems>
 
       <div className="filters" style={{ margin: '14px 0 0' }}>
         <label className="field">How much to pay toward debts each month ($)
@@ -146,14 +150,24 @@ export function DebtPlanner({ profileId, onSaved }: { profileId: number; onSaved
         <button className="btn small" onClick={() => setShowSchedule((s) => !s)} aria-expanded={showSchedule}>{showSchedule ? 'Hide' : 'Show'} month-by-month schedule</button>
       </div>
       {showSchedule && (
-        <div className="table-wrap" style={{ marginTop: 8, maxHeight: 360, overflow: 'auto' }}>
-          <table>
-            <thead><tr><th>Month</th><th className="r">Paid</th><th className="r">Interest</th><th className="r">Still owed</th></tr></thead>
-            <tbody>{chosen.schedule.map((m) => <tr key={m.month}><td>{monthLabel(m.month)}</td><td className="r num">{formatCents(m.paidCents)}</td><td className="r num">{formatCents(m.interestCents)}</td><td className="r num">{formatCents(m.balanceCents)}</td></tr>)}</tbody>
-          </table>
-        </div>
+        <Schedule rows={chosen.schedule} />
       )}
       <p className="muted" style={{ marginBottom: 0 }}>Interest is charged monthly at a twelfth of the yearly rate. Real cards compute interest daily, so treat the dates as a close estimate.</p>
     </Card>
+  )
+}
+
+function Schedule({ rows }: { rows: { month: string; paidCents: number; interestCents: number; balanceCents: number }[] }) {
+  const { rows: shown, pager } = usePaged(rows, 'debt-schedule', 'Months')
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Month</th><th className="r">Paid</th><th className="r">Interest</th><th className="r">Still owed</th></tr></thead>
+          <tbody>{shown.map((m) => <tr key={m.month}><td>{monthLabel(m.month)}</td><td className="r num">{formatCents(m.paidCents)}</td><td className="r num">{formatCents(m.interestCents)}</td><td className="r num">{formatCents(m.balanceCents)}</td></tr>)}</tbody>
+        </table>
+      </div>
+      {pager}
+    </div>
   )
 }

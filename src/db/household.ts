@@ -178,7 +178,7 @@ export function createHouseholdBudget(db: Db, name: string, monthlyCents: number
   const clean = name.trim()
   if (!clean) throw new Error('Give the budget a name')
   if (!Number.isInteger(monthlyCents) || monthlyCents < 0) throw new Error('The monthly amount cannot be negative')
-  if (db.prepare('SELECT 1 FROM household_budget WHERE name = ? COLLATE NOCASE').get(clean)) throw new Error(`There is already a budget called "${clean}"`)
+  if (db.prepare('SELECT 1 FROM household_budget WHERE fold(name) = fold(?)').get(clean)) throw new Error(`There is already a budget called "${clean}"`)
   return db.transaction(() => {
     checkGroups(db, groups)
     const id = Number(db.prepare('INSERT INTO household_budget (name, monthly_cents) VALUES (?,?)').run(clean, monthlyCents).lastInsertRowid)
@@ -193,7 +193,7 @@ export function updateHouseholdBudget(db: Db, id: number, patch: { name?: string
     if (patch.name !== undefined) {
       const clean = patch.name.trim()
       if (!clean) throw new Error('Give the budget a name')
-      if (db.prepare('SELECT 1 FROM household_budget WHERE name = ? COLLATE NOCASE AND id <> ?').get(clean, id)) throw new Error(`There is already a budget called "${clean}"`)
+      if (db.prepare('SELECT 1 FROM household_budget WHERE fold(name) = fold(?) AND id <> ?').get(clean, id)) throw new Error(`There is already a budget called "${clean}"`)
       db.prepare('UPDATE household_budget SET name = ? WHERE id = ?').run(clean, id)
     }
     if (patch.monthlyCents !== undefined) {

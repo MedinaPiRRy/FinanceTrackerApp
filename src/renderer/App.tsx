@@ -30,7 +30,7 @@ import type { Owner } from '../db/household'
 
 export type Page = 'dashboard' | 'monthly' | 'transactions' | 'import' | 'review' | 'accounts' | 'cash' | 'recurring' | 'insights' | 'costs' | 'forecast' | 'budget' | 'goals' | 'settings'
 const EMPTY_PRESET: TxnPreset = {}
-export interface TxnPreset { insightId?: string; text?: string; accountId?: number; categoryId?: number; from?: string; to?: string; reviewOnly?: boolean; reviewTab?: string; txnId?: number; kind?: string; month?: string; personId?: number; groupName?: string }
+export interface TxnPreset { insightId?: string; text?: string; accountId?: number; categoryId?: number; from?: string; to?: string; reviewOnly?: boolean; reviewTab?: string; txnId?: number; kind?: string; month?: string; personId?: number; groupName?: string; section?: string; goalId?: number; goalOwner?: number; payoff?: string; payoffLabel?: string }
 
 const NAV: { page: Page; label: string; icon: string }[][] = [
   [
@@ -71,6 +71,13 @@ const HOUSEHOLD_NAV: { page: Page; label: string; icon: string }[][] = [
 ]
 
 function Shell() {
+  // A request that fails without anything waiting for its answer (a list that loads in the background) would otherwise leave the page quietly empty.
+  const [backgroundError, setBackgroundError] = useState<string | null>(null)
+  useEffect(() => {
+    const onRejection = (e: PromiseRejectionEvent) => { e.preventDefault(); setBackgroundError(e.reason instanceof Error ? e.reason.message : 'An unexpected problem occurred.') }
+    window.addEventListener('unhandledrejection', onRejection)
+    return () => window.removeEventListener('unhandledrejection', onRejection)
+  }, [])
   const { resolved, setSetting } = useTheme()
   const [status, setStatus] = useState<Awaited<ReturnType<typeof api<'status'>>> | null>(null)
   const [profiles, setProfiles] = useState<Profile[]>([])
@@ -200,6 +207,7 @@ function Shell() {
           </div>
         )}
         {!isHousehold && <InsightBanner key={profile.id} profileId={profile.id} goto={goto} />}
+        {backgroundError && <div className="top-banner" role="alert"><span>Something could not be loaded: {backgroundError}</span><button className="btn small" onClick={() => setBackgroundError(null)}>Dismiss</button></div>}
         <header className="topbar">
           <span className="history-buttons" role="group" aria-label="History">
             <button className="btn" onClick={hist.back} disabled={!hist.canBack} aria-label="Back to the previous page" title="Back (Alt+Left)">← Back</button>
@@ -211,7 +219,9 @@ function Shell() {
             onChange={(v) => (v === 'household' ? openHousehold() : switchProfile(Number(v)))}
             options={[...profiles.map((p) => ({ value: String(p.id), label: profileLabel(p) })), ...(status.mode === 'couple_household' ? [{ value: 'household', label: 'Household' }] : [])]}
           /> : <span className="muted" style={{ fontWeight: 600 }}>{profile.name}</span>}
-          <button className="btn" onClick={() => setSetting(resolved === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${resolved === 'dark' ? 'light' : 'dark'} mode`}>{resolved === 'dark' ? '☀ Light' : '☾ Dark'}</button>
+          {resolved === 'light' || resolved === 'dark'
+            ? <button className="btn" onClick={() => setSetting(resolved === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${resolved === 'dark' ? 'light' : 'dark'} mode`}>{resolved === 'dark' ? '☀ Light' : '☾ Dark'}</button>
+            : <button className="btn" onClick={() => goto('settings', { section: 'appearance' })} aria-label="Change the app style">🎨 Style</button>}
         </header>
         <main className="content" ref={contentRef} key={`${profile.id}-${hist.entry.id}`}>
           <KeptProvider value={{ entryId: hist.entry.id, store: hist.store }}>
@@ -226,8 +236,8 @@ function Shell() {
               {page === 'costs' && <Costs profile={profile} household goto={goto} />}
               {page === 'budget' && <HouseholdBudget onChanged={changed} goto={goto} preset={preset} />}
               {page === 'forecast' && <Forecast profile={profile} goto={goto} />}
-              {page === 'goals' && <HouseholdGoals profile={profile} accounts={allAccounts} categories={categories} goto={goto} />}
-              {page === 'settings' && <Settings profile={{ ...profile, kind: 'household' }} partner={null} sample={status.sample} onLeaveSample={leftSample} mode={status.mode ?? 'single'} onPeopleChanged={reloadPeople} onDataChanged={changed} onSetupChanged={setupChanged} />}
+              {page === 'goals' && <HouseholdGoals profile={profile} accounts={allAccounts} categories={categories} goto={goto} preset={preset} />}
+              {page === 'settings' && <Settings profile={{ ...profile, kind: 'household' }} partner={null} sample={status.sample} onLeaveSample={leftSample} mode={status.mode ?? 'single'} onPeopleChanged={reloadPeople} onDataChanged={changed} onSetupChanged={setupChanged} goto={goto} section={preset.section} />}
             </>
           ) : (
             <>
@@ -243,8 +253,8 @@ function Shell() {
               {page === 'monthly' && <MonthlyReview profile={profile} goto={goto} categories={categories} />}
               {page === 'budget' && <Budget profile={profile} categories={categories} goto={goto} onChanged={changed} preset={preset} />}
               {page === 'forecast' && <Forecast profile={profile} goto={goto} />}
-              {page === 'goals' && <Goals profile={profile} accounts={accounts} categories={categories} goto={goto} />}
-              {page === 'settings' && <Settings profile={{ ...profile, kind: 'person' }} partner={partner} sample={status.sample} onLeaveSample={leftSample} mode={status.mode ?? 'single'} onPeopleChanged={reloadPeople} onDataChanged={changed} onSetupChanged={setupChanged} />}
+              {page === 'goals' && <Goals profile={profile} accounts={accounts} categories={categories} goto={goto} preset={preset} />}
+              {page === 'settings' && <Settings profile={{ ...profile, kind: 'person' }} partner={partner} sample={status.sample} onLeaveSample={leftSample} mode={status.mode ?? 'single'} onPeopleChanged={reloadPeople} onDataChanged={changed} onSetupChanged={setupChanged} goto={goto} section={preset.section} />}
             </>
           )}
           </ErrorBoundary>

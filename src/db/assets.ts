@@ -1,6 +1,7 @@
 // Things the person owns that are not in an account (a house, a car, stocks held elsewhere...), so net worth is the whole picture.
 // Each has a value "as of" a date and a history of earlier values, like a loan's balance.
 import type { Db } from './open'
+import { isRealIsoDate } from '../core/dates'
 
 export type AssetKind = 'property' | 'vehicle' | 'investment' | 'other'
 export const ASSET_KINDS: AssetKind[] = ['property', 'vehicle', 'investment', 'other']
@@ -17,7 +18,7 @@ function mine(db: Db, profileId: number, id: number) {
 
 function checkValue(valueCents: number, asOf: string) {
   if (!Number.isInteger(valueCents) || valueCents < 0) throw new Error('The value cannot be negative.')
-  if (!iso.test(asOf)) throw new Error('The date has to look like 2026-10-09.')
+  if (!isRealIsoDate(asOf)) throw new Error('The date has to look like 2026-10-09.')
 }
 
 export function createAsset(db: Db, profileId: number, a: NewAsset): number {
@@ -27,7 +28,7 @@ export function createAsset(db: Db, profileId: number, a: NewAsset): number {
   if (!ASSET_KINDS.includes(a.kind)) throw new Error('Choose what kind of thing it is.')
   checkValue(a.valueCents, a.asOf)
   if (!db.prepare('SELECT 1 FROM profile WHERE id = ?').get(profileId)) throw new Error('That person no longer exists. Reload the page.')
-  if (db.prepare('SELECT 1 FROM asset WHERE profile_id = ? AND name = ? COLLATE NOCASE').get(profileId, name)) throw new Error(`You already have something called "${name}".`)
+  if (db.prepare('SELECT 1 FROM asset WHERE profile_id = ? AND fold(name) = fold(?)').get(profileId, name)) throw new Error(`You already have something called "${name}".`)
   return db.transaction(() => {
     const id = Number(db.prepare('INSERT INTO asset (profile_id, name, kind, value_cents, as_of, notes) VALUES (?,?,?,?,?,?)').run(profileId, name, a.kind, a.valueCents, a.asOf, a.notes?.trim() || null).lastInsertRowid)
     db.prepare('INSERT INTO asset_value (asset_id, as_of, value_cents) VALUES (?,?,?)').run(id, a.asOf, a.valueCents)
@@ -48,11 +49,15 @@ export function updateAssetValue(db: Db, profileId: number, id: number, valueCen
 }
 
 export function updateAsset(db: Db, profileId: number, id: number, patch: { name?: string; kind?: AssetKind; notes?: string | null }): void {
+  db.transaction(() => updateAssetSteps(db, profileId, id, patch))() // a name, a kind and a note change together or not at all
+}
+
+function updateAssetSteps(db: Db, profileId: number, id: number, patch: { name?: string; kind?: AssetKind; notes?: string | null }): void {
   mine(db, profileId, id)
   if (patch.name !== undefined) {
     const name = patch.name.trim()
     if (!name) throw new Error('Give it a name.')
-    if (db.prepare('SELECT 1 FROM asset WHERE profile_id = ? AND name = ? COLLATE NOCASE AND id <> ?').get(profileId, name, id)) throw new Error(`You already have something called "${name}".`)
+    if (db.prepare('SELECT 1 FROM asset WHERE profile_id = ? AND fold(name) = fold(?) AND id <> ?').get(profileId, name, id)) throw new Error(`You already have something called "${name}".`)
     db.prepare('UPDATE asset SET name = ? WHERE id = ?').run(name, id)
   }
   if (patch.kind !== undefined) {

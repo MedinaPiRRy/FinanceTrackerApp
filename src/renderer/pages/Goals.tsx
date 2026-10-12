@@ -7,19 +7,22 @@ import { DebtPlanner } from '../components/DebtPlanner'
 import type { AccountInfo, CategoryInfo, DebtRow, Profile } from '../../db/queries'
 import type { GoalView, GoalDto } from '../../db/goals'
 import type { GoalKind, GoalStatus } from '../../core/goals'
-import type { Page } from '../App'
+import { GoalDetailView, detailSource } from '../components/GoalDetail'
+import type { Page, TxnPreset } from '../App'
+import { PagedItems } from '../components/Pager'
+import { toCents as moneyToCents } from '../../core/money'
 
 const KIND_LABEL: Record<GoalKind, string> = { manual: 'Savings I add to myself', account: 'Track an account', category: 'Count spending in a category', debt: 'Pay off cards and loans' }
 const STATUS: Record<GoalStatus, { label: string; cls: string }> = {
   achieved: { label: '✓ Reached', cls: 'good' }, on_track: { label: '✓ On track', cls: 'good' }, behind: { label: '▲ Behind', cls: 'bad' }, overdue: { label: '▲ Past deadline', cls: 'bad' }, no_deadline: { label: 'No deadline', cls: '' }, no_value: { label: 'Needs a value', cls: 'warn' }
 }
-const toCents = (v: string) => Math.round(Number(v) * 100)
+const toCents = (v: string) => moneyToCents(Number(v))
 const dollars = (c: number | null) => (c === null ? '' : (c / 100).toFixed(2))
 
 interface Form { id: number | null; kind: GoalKind; name: string; target: string; saved: string; deadline: string; planned: string; accountId: string; categoryId: string; items: string[]; notes: string }
 const blank: Form = { id: null, kind: 'manual', name: '', target: '', saved: '', deadline: '', planned: '', accountId: '', categoryId: '', items: [], notes: '' }
 
-export function Goals({ profile, accounts, categories, goto, householdMode }: { profile: Profile; accounts: AccountInfo[]; categories: CategoryInfo[]; goto: (p: Page) => void; householdMode?: boolean }) {
+export function Goals({ profile, accounts, categories, goto, householdMode, preset }: { profile: Profile; accounts: AccountInfo[]; categories: CategoryInfo[]; goto: (p: Page, preset?: TxnPreset) => void; householdMode?: boolean; preset?: TxnPreset }) {
   const [goals, setGoals] = useState<GoalView[] | null>(null)
   const [debts, setDebts] = useState<DebtRow[]>([])
   const [form, setForm] = useState<Form | null>(null)
@@ -52,6 +55,8 @@ export function Goals({ profile, accounts, categories, goto, householdMode }: { 
   }
   const remove = async (g: GoalView) => { if (confirm(`Delete the goal "${g.name}"? Your accounts and transactions are not affected.`)) { try { await api('goalDelete', profile.id, g.id); load() } catch (e) { setError((e as Error).message) } } }
 
+  const opened = detailSource(preset)
+  if (opened) return <GoalDetailView profileId={profile.id} source={opened} goto={goto} />
   if (!goals) return <p className="muted">Loading…</p>
 
   return (
@@ -107,14 +112,15 @@ export function Goals({ profile, accounts, categories, goto, householdMode }: { 
       {form && <div style={{ height: 16 }} />}
 
       {goals.length === 0 ? <Card><h2>No goals yet</h2><p className="sub">Add a goal to track a savings target, a debt you want gone, or money set aside for something big.</p></Card> : (
+        <PagedItems items={goals} name="goals" noun="Goals">{(pg) => (
         <div className="grid two">
-          {goals.map((g) => {
+          {pg.map((g) => {
             const p = g.progress
             const st = STATUS[p.status]
             return (
-              <Card key={g.id} className="goal-card">
+              <Card key={g.id} className="goal-card" onClick={() => goto('goals', { goalId: g.id })}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
-                  <div><h2>{g.name}</h2><div className="muted">{KIND_LABEL[g.kind]}{g.accountName ? ` · ${g.accountName}` : ''}{g.categoryName ? ` · ${g.categoryName}` : ''}</div></div>
+                  <div><h2><button className="txn-link" style={{ font: 'inherit', textAlign: 'left' }} title="See what counts toward this goal" onClick={(e) => { e.stopPropagation(); goto('goals', { goalId: g.id }) }}>{g.name}</button></h2><div className="muted">{KIND_LABEL[g.kind]}{g.accountName ? ` · ${g.accountName}` : ''}{g.categoryName ? ` · ${g.categoryName}` : ''}</div></div>
                   <span className={`badge ${st.cls}`}>{st.label}</span>
                 </div>
                 <div>
@@ -134,13 +140,13 @@ export function Goals({ profile, accounts, categories, goto, householdMode }: { 
                   <div><div className="k">Estimated finish</div><div className="v">{p.estimatedMonth ? monthLabel(p.estimatedMonth) : g.plannedMonthlyCents ? '—' : 'Needs a monthly plan'}</div></div>
                 </div>
                 {g.items.length > 0 && (
-                  <div className="table-wrap"><table><tbody>
+                  <div className="table-wrap" onClick={(e) => e.stopPropagation()}><table><tbody>
                     {g.items.map((i) => <tr key={`${i.type}${i.accountId ?? i.debtId}`}><td>{i.label}<span className="muted"> · {i.type === 'card' ? 'card' : 'loan'}</span></td><td className="r num">{formatCents(i.owedCents)}</td></tr>)}
                   </tbody></table></div>
                 )}
                 {g.notes && <div className="muted" style={{ fontSize: 12.5 }}>{g.notes}</div>}
-                {p.status === 'no_value' && <div><button className="btn small" onClick={() => goto('accounts')}>Enter the account value</button></div>}
-                <div style={{ display: 'flex', gap: 8 }}>
+                {p.status === 'no_value' && <div><button className="btn small" onClick={(e) => { e.stopPropagation(); goto('accounts') }}>Enter the account value</button></div>}
+                <div style={{ display: 'flex', gap: 8 }} onClick={(e) => e.stopPropagation()}>
                   <button className="btn small" onClick={() => edit(g)}>Edit</button>
                   <button className="btn small danger" onClick={() => void remove(g)}>Delete</button>
                 </div>
@@ -148,9 +154,10 @@ export function Goals({ profile, accounts, categories, goto, householdMode }: { 
             )
           })}
         </div>
+        )}</PagedItems>
       )}
       <div style={{ height: 20 }} />
-      <DebtPlanner profileId={profile.id} />
+      <DebtPlanner profileId={profile.id} onOpen={(d) => goto('goals', { payoff: d.key, payoffLabel: d.label })} />
       <p className="muted" style={{ marginTop: 14 }}>Estimates divide what is left by your planned monthly amount, starting this month. They ignore changes in your income, and they ignore interest (the debt payoff planner above includes it), so treat them as a guide.</p>
     </>
   )

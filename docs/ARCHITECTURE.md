@@ -95,9 +95,13 @@ adds spending up (dashboard, budgets, forecast, household groups, goals, the wor
 `applyAmountRule` files rows still waiting for a category, optionally re-files automatic guesses, and never touches rows the
 person filed or rows that come from a workbook.
 
-**Taxes and interest.** Interest is found from the words of a money-out transaction ("interest", not a reversal or refund);
-taxes are categories marked as such (`category.purpose`, guessed from the name until the person chooses). A fee that the bank
-gave straight back is excluded.
+**Taxes and interest.** `core/costs.ts` decides what one transaction counts as, in this order: the payment's own mark (`txn.cost_purpose`:
+'tax', 'interest', or 'none' = left out) beats everything; a payment in an account taken out of the page (`account.costs_excluded`) is
+left out; then its category's setting (`category.purpose`, guessed from the name until set; a name that also says fees is not guessed)
+and finally, for money out, its own wording ("interest", not a refund, reversal or "no interest"). Direction decides the side: money out
+is *paid* (a refund reduces it), money in is *received* (a GST/HST credit, interest earned). A fee given straight back cancels out.
+`db/costsReport.ts` builds the year's figures and pages the payments behind each (`costLines`); `db/costsManage.ts` marks payments,
+accounts and categories. Transfers and lines still waiting in Review can never be marked.
 
 **Net worth.** Accounts (non-card, non-archived; investments use their last valuation) + things added by hand (`asset`, with a
 value history in `asset_value`) minus card/loan balances and tracked debts.

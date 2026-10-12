@@ -9,7 +9,7 @@ import { buildPreview } from '../src/db/import'
 import { createDebt } from '../src/db/debts'
 import { linkPaymentToDebt } from '../src/db/debtPayments'
 import { debtDetail } from '../src/db/debtDetail'
-import { costsReport } from '../src/db/costsReport'
+import { costsReport, costLines } from '../src/db/costsReport'
 import { guessPurpose, costKind } from '../src/core/costs'
 import { createAsset, updateAssetValue, updateAsset, deleteAsset, assetHistory, listAssets, netWorth } from '../src/db/assets'
 import { checkBalance } from '../src/db/accountChecks'
@@ -154,7 +154,7 @@ describe('rules that depend on the amount', () => {
 
 describe('taxes and interest', () => {
   it('guesses from names, honours what the person set, and reads interest out of the words', () => {
-    expect(['Income Tax', 'Property taxes', 'HST', 'Bank Fees & Interest', 'Groceries', 'Taxi'].map(guessPurpose)).toEqual(['tax', 'tax', 'tax', 'interest', 'none', 'none'])
+    expect(['Income Tax', 'Property taxes', 'HST', 'Bank Fees & Interest', 'Groceries', 'Taxi'].map(guessPurpose)).toEqual(['tax', 'tax', 'tax', 'none', 'none', 'none'])
     const base = { amountCents: -500, description: 'x', categoryPurpose: null, categoryName: 'Bank Fees' }
     expect(costKind({ ...base, kind: 'expense', description: 'PURCHASE INTEREST' })).toBe('interest')
     expect(costKind({ ...base, kind: 'expense', description: 'INTEREST REVERSAL' })).toBeNull()
@@ -173,14 +173,14 @@ describe('taxes and interest', () => {
     let r = costsReport(db, [p], 2026)
     expect(r.interestCents).toBe(0) // the person said Bank Fees is neither
     expect(r.taxCents).toBe(90000)
-    expect(r.taxBy).toEqual([{ name: 'Taxes', cents: 90000 }])
+    expect(r.tax.byCategory.map((g) => [g.name, g.paidCents])).toEqual([['Taxes', 90000]])
     expect(r.months.find((m) => m.month === '2026-04')!.taxCents).toBe(120000)
     expect(r.months.find((m) => m.month === '2026-05')!.taxCents).toBe(-30000)
     setCategoryPurpose(db, p, fees, null) // back to guessing: the name says Fees, the words say interest
     r = costsReport(db, [p], 2026)
     expect(r.interestCents).toBe(3657 * 2)
-    expect(r.interestLines.map((l) => l.date)).toEqual(['2026-02-15', '2026-01-15'])
-    expect(r.interestBy).toEqual([{ name: 'Visa', cents: 7314 }])
+    expect(costLines(db, [p], 2026, { kind: 'interest' }).rows.map((l) => l.date)).toEqual(['2026-02-15', '2026-01-15'])
+    expect(r.interest.byAccount.map((g) => [g.name, g.paidCents])).toEqual([['Visa', 7314]])
     expect(r.years).toEqual([2026, 2025])
     expect(costsReport(db, [p], 2025).interestCents).toBe(9999)
   })

@@ -194,7 +194,7 @@ export interface CommitRow {
   include: boolean
 }
 
-export interface CommitResult { batchId: number; inserted: number; skippedExisting: number; learned: number; queuedForReview: number; transfersPaired: number }
+export interface CommitResult { batchId: number; inserted: number; skippedExisting: number; learned: number; queuedForReview: number; transfersPaired: number; /** Payments marked as counting toward a loan that could not be linked (they were still imported). */ loansNotLinked: number }
 
 const KINDS = new Set(['income', 'expense', 'refund', 'transfer', 'unclassified'])
 
@@ -208,7 +208,7 @@ export function commitImport(db: Db, profileId: number, accountId: number, fileN
     const before = db.prepare('SELECT a.name AS name FROM import_batch b JOIN account a ON a.id = b.account_id WHERE b.profile_id = ? AND b.file_hash = ? AND b.account_id != ? LIMIT 1').get(profileId, opts.fileHash, accountId) as { name: string } | undefined
     if (before) throw new Error(`This exact file was already imported into "${before.name}". Importing it into a different account would record every transaction twice. Confirm that this is what you want, or pick "${before.name}".`)
   }
-  const result: CommitResult = { batchId: 0, inserted: 0, skippedExisting: 0, learned: 0, queuedForReview: 0, transfersPaired: 0 }
+  const result: CommitResult = { batchId: 0, inserted: 0, skippedExisting: 0, learned: 0, queuedForReview: 0, transfersPaired: 0, loansNotLinked: 0 }
   db.transaction(() => {
     result.batchId = Number(db.prepare('INSERT INTO import_batch (profile_id, source, filename, row_count, account_id, file_hash, layout) VALUES (?,?,?,0,?,?,?)').run(profileId, 'import', fileName, accountId, opts.fileHash ?? null, opts.layout ?? null).lastInsertRowid)
     const insert = db.prepare(`INSERT INTO txn (profile_id, account_id, posted_date, amount_cents, description, description_raw, category_id, kind, review_reason, counterparty_profile_id, source, import_batch_id, fingerprint) VALUES (?,?,?,?,?,?,?,?,?,?,'import',?,?)`)
@@ -267,7 +267,7 @@ export function commitImport(db: Db, profileId: number, accountId: number, fileN
       }
       const ins = insert.run(profileId, accountId, r.date, r.amountCents, desc, r.raw, categoryId, r.kind, reason, counterparty, result.batchId, fingerprint)
       // counts toward a loan the person tracks; a stale link (the loan was deleted since) must not stop the import
-      if (r.debtId && r.kind === 'expense') { try { linkPaymentToDebt(db, Number(ins.lastInsertRowid), r.debtId) } catch { /* the payment is still imported */ } }
+      if (r.debtId && r.kind === 'expense') { try { linkPaymentToDebt(db, Number(ins.lastInsertRowid), r.debtId) } catch { result.loansNotLinked++ /* the payment is still imported, and the person is told */ } }
       result.inserted++
       if (reason) result.queuedForReview++
 

@@ -5,6 +5,7 @@ import { ErrorBox, ProgressBar } from './ui'
 import { formatCents, shortMonth } from '../format'
 import type { DebtDetail as Detail } from '../../db/debtDetail'
 import type { Page, TxnPreset } from '../App'
+import { PagedItems } from './Pager'
 
 /** One loan in detail: how much was owed, how much is paid off, every payment counted toward it, and where the balance is heading. */
 export function DebtDetailPanel({ profileId, debtId, version, goto, onChanged }: { profileId: number; debtId: number; version: number; goto: (p: Page, preset?: TxnPreset) => void; onChanged: () => void }) {
@@ -41,9 +42,10 @@ export function DebtDetailPanel({ profileId, debtId, version, goto, onChanged }:
       </p>
       {d.history.length >= 2 ? <Chart build={option} height={180} label={`Line chart of the balance owed on ${d.name} over time`} /> : <span className="muted">The chart appears once the balance has changed at least once.</span>}
       {d.payments.length > 0 && (
-        <div className="table-wrap"><table>
+        <PagedItems items={d.payments} name={`debt-detail-${d.id}`} noun="Payments">{(pg) => (
+<div className="table-wrap"><table>
           <thead><tr><th>Date</th><th>Payment</th><th className="r">Paid</th><th className="r">Took off the balance</th><th></th></tr></thead>
-          <tbody>{d.payments.map((p) => (
+          <tbody>{pg.map((p) => (
             <tr key={p.txnId}>
               <td className="num">{p.date}</td>
               <td><button className="txn-link" title="Show this transaction in its account" onClick={() => goto('transactions', { from: p.date, to: p.date, text: p.description })}>{p.description}</button></td>
@@ -52,6 +54,7 @@ export function DebtDetailPanel({ profileId, debtId, version, goto, onChanged }:
             </tr>
           ))}</tbody>
         </table></div>
+)}</PagedItems>
       )}
     </div>
   )

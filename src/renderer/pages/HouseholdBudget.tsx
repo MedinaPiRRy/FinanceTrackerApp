@@ -8,8 +8,10 @@ import { Card, ErrorBox, ProgressBar, StateBadge } from '../components/ui'
 import { formatCents, monthLabel, today } from '../format'
 import { SuggestBudgets } from '../components/SuggestBudgets'
 import type { HouseholdBudgetReport, CategoryGroupRow } from '../../db/household'
+import { PagedItems } from '../components/Pager'
+import { toCents as moneyToCents } from '../../core/money'
 
-const toCents = (v: string) => Math.round(Number(v) * 100)
+const toCents = (v: string) => moneyToCents(Number(v))
 
 function GroupEditor({ onChanged }: { onChanged: () => void }) {
   const [rows, setRows] = useState<CategoryGroupRow[]>([])
@@ -28,10 +30,11 @@ function GroupEditor({ onChanged }: { onChanged: () => void }) {
       <div className="card-head"><h2>Category groups</h2><span className="muted">Each of you has your own category names. A group is the shared name used for household totals and budgets.</span></div>
       <ErrorBox error={error} />
       <datalist id="group-names">{names.map((n) => <option key={n} value={n} />)}</datalist>
-      <div className="table-wrap"><table>
+      <PagedItems items={rows} name="hh-groups" noun="Categories">{(pg) => (
+<div className="table-wrap"><table>
         <thead><tr><th>Whose</th><th>Category</th><th>Category group</th><th></th></tr></thead>
         <tbody>
-          {rows.map((r) => {
+          {pg.map((r) => {
             const v = draft[r.id] ?? r.group
             return (
               <tr key={r.id}>
@@ -46,6 +49,7 @@ function GroupEditor({ onChanged }: { onChanged: () => void }) {
           })}
         </tbody>
       </table></div>
+)}</PagedItems>
     </Card>
   )
 }
@@ -90,7 +94,7 @@ export function HouseholdBudget({ onChanged, goto, preset }: { preset?: TxnPrese
   return (
     <>
       <div className="page-head">
-        <div><h1>Household budget</h1><p>Monthly budgets for the two of you together, by category group. Each line shows who spent what.</p></div>
+        <div><h1>Household budget</h1><p>Monthly budgets for the two of you together. You each have your own category names, so a <b>category group</b> is one shared name (say, Groceries) that both of your categories roll up into. Budgets are set per group, and each line shows who spent what. Set the groups at the bottom of this page.</p></div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
           <label className="field">Month<select value={month} onChange={(e) => setMonth(e.target.value)}>{[...months].reverse().map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select></label>
           <button className="btn primary" onClick={startNew}>Add budget</button>
@@ -144,11 +148,12 @@ export function HouseholdBudget({ onChanged, goto, preset }: { preset?: TxnPrese
       {drillId !== null && <BudgetDrill load={drillLoad} goto={goto} onClose={() => setDrillId(null)} />}
       <Card>
         {report.lines.length === 0 ? <p className="muted">No household budgets yet. Add one to track a category group for both of you together.</p> : (
-          <div className="table-wrap"><table>
+          <PagedItems items={report.lines} name="hh-budgets" noun="Budgets">{(pg) => (
+<div className="table-wrap"><table>
             <caption className="sr-only">Household budgets for {monthLabel(month)}</caption>
             <thead><tr><th>Budget</th><th className="r">Monthly budget</th><th className="r">Spent</th><th className="r">Left</th><th style={{ width: 160 }}>Progress</th><th>Status</th><th></th></tr></thead>
             <tbody>
-              {report.lines.map((l) => (
+              {pg.map((l) => (
                 <tr key={l.id}>
                   <td><button className="txn-link" title="See the transactions in this budget, by account" onClick={() => setDrillId(l.id)}>{l.name}</button><div className="muted" style={{ fontSize: 12 }}>{l.groups.join(' · ') || 'No groups yet'}</div></td>
                   <td className="r num">{formatCents(l.budgetCents)}</td>
@@ -164,6 +169,7 @@ export function HouseholdBudget({ onChanged, goto, preset }: { preset?: TxnPrese
               ))}
             </tbody>
           </table></div>
+)}</PagedItems>
         )}
       </Card>
 
@@ -172,7 +178,9 @@ export function HouseholdBudget({ onChanged, goto, preset }: { preset?: TxnPrese
           <div style={{ height: 16 }} />
           <Card>
             <div className="card-head"><h2>Spending in no household budget</h2><span className="muted">{monthLabel(month)}</span></div>
-            <div className="table-wrap"><table><tbody>{report.unbudgeted.map((u) => <tr key={u.group}><td>{u.group}</td><td className="r num">{formatCents(u.cents)}</td></tr>)}</tbody></table></div>
+            <PagedItems items={report.unbudgeted} name="hh-unbudgeted" noun="Groups">{(pg) => (
+<div className="table-wrap"><table><tbody>{pg.map((u) => <tr key={u.group}><td>{u.group}</td><td className="r num">{formatCents(u.cents)}</td></tr>)}</tbody></table></div>
+)}</PagedItems>
           </Card>
         </>
       )}

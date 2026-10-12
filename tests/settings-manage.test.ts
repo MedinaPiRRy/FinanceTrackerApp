@@ -31,7 +31,7 @@ beforeEach(() => {
 
 describe('general settings', () => {
   it('have sensible defaults, validate what they accept, and drive the "older" cut-off', () => {
-    expect(getAppSettings(db)).toEqual({ olderAfterDays: 90, startPage: 'dashboard', autoBackupKeep: 0 })
+    expect(getAppSettings(db)).toEqual({ olderAfterDays: 90, startPage: 'dashboard', autoBackupKeep: 10 })
     expect(setAppSetting(db, 'olderAfterDays', 30).olderAfterDays).toBe(30)
     expect(() => setAppSetting(db, 'olderAfterDays', 45)).toThrow(/30, 90, 180 or 365/)
     expect(() => setAppSetting(db, 'startPage', 'secret' as never)).toThrow(/page from the list/)

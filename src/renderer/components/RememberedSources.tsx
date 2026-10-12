@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 import { Card, ErrorBox } from './ui'
 import type { SourceRule } from '../../db/sourceRules'
+import { PagedItems } from './Pager'
 
 const KIND: Record<string, string> = { income: 'Income', expense: 'Expense', refund: 'Refund or reimbursement', transfer: 'Transfer' }
 
@@ -20,10 +21,11 @@ export function RememberedSources({ profileId }: { profileId: number }) {
       <p className="sub" style={{ marginTop: 0 }}>Sources you told the app to always file the same way when you reviewed them. Forgetting one only affects future imports and reviews: transactions already filed stay as they are.</p>
       <ErrorBox error={error} />
       {rules === null ? <p className="muted">Loading…</p> : rules.length === 0 ? <p className="muted">None yet. Tick “Always do this for…” while reviewing a transaction to add one.</p> : (
-        <div className="table-wrap"><table>
+        <PagedItems items={rules} name="remembered-sources" noun="Sources">{(pg) => (
+<div className="table-wrap"><table>
           <thead><tr><th>Source</th><th>Money</th><th>Filed as</th><th></th></tr></thead>
           <tbody>
-            {rules.map((r) => (
+            {pg.map((r) => (
               <tr key={r.id}>
                 <td>{r.name}</td>
                 <td>{r.direction === 'in' ? 'coming in' : 'going out'}</td>
@@ -33,6 +35,7 @@ export function RememberedSources({ profileId }: { profileId: number }) {
             ))}
           </tbody>
         </table></div>
+)}</PagedItems>
       )}
     </Card>
   )

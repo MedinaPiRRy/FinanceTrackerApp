@@ -127,14 +127,16 @@ export function generateInsights(input: InsightInput): Insight[] {
   }
   const byCat = new Map<string, number[]>()
   for (const t of txns) if (t.kind === 'expense' && t.category && t.date < `${month}-01`) (byCat.get(t.category) ?? byCat.set(t.category, []).get(t.category)!).push(-t.amountCents)
+  const medians = new Map<string, number>() // a category's median is worked out once, not once per purchase
+  const medianOf = (cat: string, hist: number[]) => medians.get(cat) ?? medians.set(cat, median(hist)).get(cat)!
   const unusual = txns
     .filter((t) => t.kind === 'expense' && t.category && t.date.startsWith(month) && -t.amountCents >= 7500)
     .map((t) => ({ t, hist: byCat.get(t.category!) ?? [] }))
-    .filter(({ t, hist }) => hist.length >= 5 && -t.amountCents >= 3 * median(hist))
+    .filter(({ t, hist }) => hist.length >= 5 && -t.amountCents >= 3 * medianOf(t.category!, hist))
     .sort((a, b) => a.t.amountCents - b.t.amountCents)
     .slice(0, 3)
   for (const { t, hist } of unusual)
-    out.push({ type: 'anomaly', tone: 'warn', title: `Unusually large ${t.category} purchase: ${t.description}`, detail: `${formatCents(-t.amountCents)} on ${t.date}; your typical ${t.category} transaction is ${formatCents(Math.round(median(hist)))}.` , meaning: 'One purchase far larger than usual for this category. If you expected it, there is nothing to do; if not, it is worth checking it is correct.', ref: { page: 'transactions', category: t.category!, month, text: t.description, txnId: t.id, accountId: t.accountId, date: t.date } })
+    out.push({ type: 'anomaly', tone: 'warn', title: `Unusually large ${t.category} purchase: ${t.description}`, detail: `${formatCents(-t.amountCents)} on ${t.date}; your typical ${t.category} transaction is ${formatCents(Math.round(medianOf(t.category!, hist)))}.` , meaning: 'One purchase far larger than usual for this category. If you expected it, there is nothing to do; if not, it is worth checking it is correct.', ref: { page: 'transactions', category: t.category!, month, text: t.description, txnId: t.id, accountId: t.accountId, date: t.date } })
 
   // ---- recommendations (point at something to look at, no advice) ----
   const window = series.filter((s) => s.month <= month).slice(-6)

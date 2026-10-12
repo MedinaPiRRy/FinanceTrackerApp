@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { Card, ErrorBox, Segmented } from '../components/ui'
-import { Pager } from '../components/Pager'
+import { Pager, PagedItems, PAGE_SIZE } from '../components/Pager'
 import { formatCents, KIND_LABEL } from '../format'
 import type { AccountInfo, CategoryInfo, Profile } from '../../db/queries'
 import type { Preview, PreviewRow, BatchInfo, CommitResult, CommitRow } from '../../db/import'
@@ -9,7 +9,7 @@ import type { ImportMeta, AccountSuggestion } from '../../db/importMatch'
 import type { ColumnMap } from '../../core/statement'
 import type { Page } from '../App'
 
-const IMPORT_PAGE = 100
+const IMPORT_PAGE = PAGE_SIZE
 type View = 'all' | 'new' | 'duplicate' | 'repeat' | 'attention'
 type Kind = PreviewRow['kind']
 
@@ -168,6 +168,7 @@ export function Import({ profile, accounts, categories, onChanged, goto, partner
           <b>Imported {result.inserted} transaction{result.inserted === 1 ? '' : 's'}.</b>{' '}
           {result.queuedForReview > 0 && <>{result.queuedForReview} need your review. </>}
           {result.learned > 0 && <>Remembered {result.learned} merchant{result.learned === 1 ? '' : 's'} for next time. </>}
+          {result.loansNotLinked > 0 && <><b>{result.loansNotLinked} payment{result.loansNotLinked === 1 ? ' was' : 's were'} imported but could not be counted toward the loan.</b> Open the loan on the Accounts page and count {result.loansNotLinked === 1 ? 'it' : 'them'} from Review or Transactions. </>}
           {result.transfersPaired > 0 && <>Linked {result.transfersPaired} transfer{result.transfersPaired === 1 ? '' : 's'} between your accounts. </>}
           {result.skippedExisting > 0 && <>Skipped {result.skippedExisting} already imported. </>}
           <button className="btn small" style={{ marginLeft: 8 }} onClick={() => goto('review')}>Open review queue</button>
@@ -195,6 +196,7 @@ export function Import({ profile, accounts, categories, onChanged, goto, partner
             <input type="checkbox" checked={flip} onChange={(e) => { setFlip(e.target.checked); if (file && accountId) void runPreview(file, accountId, e.target.checked) }} />
             Spending shows as positive numbers in this file
           </label>
+          <div className="muted" style={{ fontSize: 12, flexBasis: '100%' }}>Leave this off unless the preview shows your purchases as money coming in. Some credit-card files list purchases as positive numbers; tick this and the preview flips them to spending.</div>
         </div>
         {!accountId && <p className="muted" style={{ marginBottom: 0 }}>Choose an account, or pick the file and the app will try to match it to one.</p>}
         {suggestion && accountId && String(suggestion.accountId) === accountId && <p className="muted" role="status" style={{ marginBottom: 0 }}>✓ {suggestion.message} Change it above if that is wrong.</p>}
@@ -316,10 +318,11 @@ export function Import({ profile, accounts, categories, onChanged, goto, partner
       <Card>
         <div className="card-head"><h2>Past imports</h2></div>
         {history.length === 0 ? <p className="muted">Nothing imported yet.</p> : (
-          <div className="table-wrap"><table>
+          <PagedItems items={history} name="import-history" noun="Imports">{(pg) => (
+<div className="table-wrap"><table>
             <thead><tr><th>When</th><th>File</th><th className="r">Transactions</th><th></th></tr></thead>
             <tbody>
-              {history.map((b) => (
+              {pg.map((b) => (
                 <tr key={b.id}>
                   <td className="num">{b.importedAt.slice(0, 16)}</td>
                   <td>{b.fileName ? b.fileName.split(/[\\/]/).pop() : '—'}{!b.undoable && b.rowCount > 0 && b.remaining === 0 ? <span className="muted"> (removed)</span> : null}</td>
@@ -329,6 +332,7 @@ export function Import({ profile, accounts, categories, onChanged, goto, partner
               ))}
             </tbody>
           </table></div>
+)}</PagedItems>
         )}
       </Card>
     </>

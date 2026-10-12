@@ -1,7 +1,8 @@
-import { app, BrowserWindow, ipcMain, shell, nativeTheme, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeTheme, dialog } from 'electron'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { createHandlers } from './handlers'
 import { dispatch } from './dispatch'
 
@@ -61,13 +62,13 @@ function createWindow() {
   })
   mainWindow = win
   win.on('closed', () => { mainWindow = null })
-  // Nothing in this app should ever navigate away or open other windows.
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https:\/\//.test(url)) void shell.openExternal(url)
-    return { action: 'deny' }
-  })
+  // Nothing in this app should ever navigate away or open other windows: the pages contain no outside links, so any attempt is refused.
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  const own = process.env.ELECTRON_RENDERER_URL ? new URL(process.env.ELECTRON_RENDERER_URL).origin : null
+  const ownFile = pathToFileURL(path.join(__dirname, '../renderer/index.html')).href
   win.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith('file://') && !url.startsWith(process.env.ELECTRON_RENDERER_URL ?? 'file://')) e.preventDefault()
+    const ok = own ? new URL(url).origin === own : url.split('#')[0] === ownFile
+    if (!ok) e.preventDefault()
   })
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else void win.loadFile(path.join(__dirname, '../renderer/index.html'))

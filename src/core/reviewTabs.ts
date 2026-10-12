@@ -8,9 +8,9 @@ export const OLD_AFTER_DAYS = 90
 
 export const REVIEW_TABS: { tab: ReviewTab; label: string; hint: string }[] = [
   { tab: 'possible_income', label: 'Possible income', hint: 'Money that came in and the app cannot tell what it was: e-transfers received, deposits, unknown credits. Decide whether each source is income, a reimbursement or something else.' },
-  { tab: 'money_in', label: 'Money in', hint: 'Other money coming in that needs a category or a second look.' },
+  { tab: 'money_in', label: 'Money in', hint: 'Money that came in and needs a category or a second look (a refund, a payment from someone, a deposit).' },
   { tab: 'money_out', label: 'Money out', hint: 'Money that went out and needs a category or a decision (e-transfers sent, withdrawals).' },
-  { tab: 'other', label: 'Transfers & investments', hint: 'Money moved to or from an investment or another account.' },
+  { tab: 'other', label: 'Transfers & investments', hint: 'Money moved between your own accounts, or into or out of an investment. Most of these only need a quick yes: it is a transfer, not spending or income.' },
   { tab: 'older', label: 'Older', hint: 'Waiting for longer than your chosen number of days (Settings → General), so they are not highlighted anywhere and not counted in your figures yet. Review them whenever you like; the same grouping and "always do this" apply.' }
 ]
 

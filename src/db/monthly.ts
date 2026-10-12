@@ -3,6 +3,7 @@ import { getDashboard, listRecurring, type Dashboard } from './queries'
 import { budgetReport, type BudgetReport } from './budgets'
 import { listGoals, type GoalView } from './goals'
 import { monthEnd, monthStart } from '../core/budgets'
+import { addDays, daysBetween } from '../core/dates'
 import { keyMatches } from '../core/categorize'
 import { normalizeKey } from '../core/normalize'
 import type { Insight } from '../core/insights'
@@ -50,16 +51,22 @@ export function getMonthlyReview(db: Db, profileId: number, month: string | unde
     .sort((a, b) => Math.abs(b.deltaCents) - Math.abs(a.deltaCents))
     .slice(0, 8)
 
-  const top = db.prepare(`SELECT t.id, t.account_id AS accountId, t.posted_date AS date, t.description, CASE WHEN pc.name IS NULL THEN c.name ELSE pc.name || ' › ' || c.name END AS category, -t.amount_cents AS cents FROM txn t LEFT JOIN category c ON c.id = t.category_id LEFT JOIN category pc ON pc.id = c.parent_id WHERE t.profile_id = ? AND t.kind = 'expense' AND t.posted_date BETWEEN ? AND ?
-    AND NOT EXISTS (SELECT 1 FROM txn r WHERE r.kind = 'refund' AND r.account_id = t.account_id AND r.category_id IS t.category_id AND r.amount_cents = -t.amount_cents AND ABS(julianday(r.posted_date) - julianday(t.posted_date)) <= 7) ORDER BY t.amount_cents ASC LIMIT 10`).all(profileId, monthStart(m), monthEnd(m)) as Dashboard['largestExpenses']
+  // The biggest purchases, leaving out a charge the bank paid straight back (same account, category and amount, a refund within a week).
+  // The refunds are few, so they are fetched once and compared here; asking the database to check every candidate against every row was the slow part.
+  const candidates = db.prepare(`SELECT t.id, t.account_id AS accountId, t.category_id AS categoryId, t.posted_date AS date, t.description, CASE WHEN pc.name IS NULL THEN c.name ELSE pc.name || ' › ' || c.name END AS category, -t.amount_cents AS cents FROM txn t LEFT JOIN category c ON c.id = t.category_id LEFT JOIN category pc ON pc.id = c.parent_id WHERE t.profile_id = ? AND t.kind = 'expense' AND t.posted_date BETWEEN ? AND ? ORDER BY t.amount_cents ASC LIMIT 200`).all(profileId, monthStart(m), monthEnd(m)) as (Dashboard['largestExpenses'][number] & { categoryId: number | null })[]
+  const refunds = db.prepare(`SELECT account_id AS accountId, category_id AS categoryId, posted_date AS date, amount_cents AS cents FROM txn WHERE profile_id = ? AND kind = 'refund' AND posted_date BETWEEN ? AND ?`).all(profileId, addDays(monthStart(m), -7), addDays(monthEnd(m), 7)) as { accountId: number; categoryId: number | null; date: string; cents: number }[]
+  const top = candidates
+    .filter((c) => !refunds.some((r) => r.accountId === c.accountId && r.categoryId === c.categoryId && r.cents === c.cents && Math.abs(daysBetween(r.date, c.date)) <= 7))
+    .slice(0, 10)
+    .map(({ categoryId: _c, ...rest }) => rest) as Dashboard['largestExpenses']
 
-  const monthTxns = db.prepare(`SELECT t.posted_date AS date, t.amount_cents AS cents, t.description, a.name AS account FROM txn t JOIN account a ON a.id = t.account_id WHERE t.profile_id = ? AND t.kind = 'expense' AND t.posted_date BETWEEN ? AND ?`).all(profileId, monthStart(m), monthEnd(m)) as { date: string; cents: number; description: string; account: string }[]
+  const monthTxns = (db.prepare(`SELECT t.posted_date AS date, t.amount_cents AS cents, t.description, a.name AS account FROM txn t JOIN account a ON a.id = t.account_id WHERE t.profile_id = ? AND t.kind = 'expense' AND t.posted_date BETWEEN ? AND ?`).all(profileId, monthStart(m), monthEnd(m)) as { date: string; cents: number; description: string; account: string }[]).map((x) => ({ ...x, key: normalizeKey(x.description) })) // normalised once, not once per bill
   const recurring: RecurringCheck[] = listRecurring(db, profileId)
     .filter((r) => r.direction === 'expense' && r.countsInBudget && r.status !== 'cancelled' && ['weekly', 'biweekly', 'semimonthly', 'monthly'].includes(r.frequency))
     .map((r) => {
       const key = normalizeKey(r.name)
       const hit = monthTxns.find((t) => {
-        const k = normalizeKey(t.description)
+        const k = t.key
         const nameMatch = keyMatches(k, key) || keyMatches(key, k)
         const amountMatch = Math.abs(-t.cents - r.amountCents) <= 50 && t.account === r.account
         return nameMatch || amountMatch

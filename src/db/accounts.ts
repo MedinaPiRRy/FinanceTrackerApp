@@ -28,7 +28,7 @@ export function createAccount(db: Db, profileId: number, a: NewAccount): number 
   if (a.openingCents !== undefined && (!Number.isInteger(a.openingCents) || a.openingCents < 0)) throw new Error('The starting amount cannot be negative')
   if (a.creditLimitCents != null && (!Number.isInteger(a.creditLimitCents) || a.creditLimitCents < 0)) throw new Error('The credit limit cannot be negative')
   if (!db.prepare('SELECT 1 FROM profile WHERE id = ?').get(profileId)) throw new Error('That person no longer exists. Reload the page.')
-  if (db.prepare('SELECT 1 FROM account WHERE profile_id = ? AND name = ? COLLATE NOCASE').get(profileId, name)) throw new Error(`There is already an account called "${name}"`)
+  if (db.prepare('SELECT 1 FROM account WHERE profile_id = ? AND fold(name) = fold(?)').get(profileId, name)) throw new Error(`There is already an account called "${name}"`)
   const opening = a.type === 'credit_card' || a.type === 'loan' ? -(a.openingCents ?? 0) : a.openingCents ?? 0 // debts are stored negative
   return Number(
     db.prepare('INSERT INTO account (profile_id, name, type, institution, opening_balance_cents, credit_limit_cents) VALUES (?,?,?,?,?,?)')
@@ -48,7 +48,7 @@ export function renameAccount(db: Db, profileId: number, id: number, name: strin
   ownedAccount(db, profileId, id)
   const clean = name.trim()
   if (!clean) throw new Error('Give the account a name')
-  if (db.prepare('SELECT 1 FROM account WHERE profile_id = ? AND name = ? COLLATE NOCASE AND id <> ?').get(profileId, clean, id)) throw new Error(`There is already an account called "${clean}"`)
+  if (db.prepare('SELECT 1 FROM account WHERE profile_id = ? AND fold(name) = fold(?) AND id <> ?').get(profileId, clean, id)) throw new Error(`There is already an account called "${clean}"`)
   db.prepare('UPDATE account SET name = ? WHERE id = ?').run(clean, id)
 }
 
@@ -81,7 +81,7 @@ export function moveAccount(db: Db, accountId: number, toProfileId: number): { m
   if (!db.prepare('SELECT 1 FROM profile WHERE id = ?').get(toProfileId)) throw new Error('That person no longer exists. Reload the page.')
   if (a.p === toProfileId) throw new Error('The account already belongs there')
   if (a.type === 'cash') throw new Error('A Cash wallet belongs to one person and cannot be moved')
-  if (db.prepare('SELECT 1 FROM account WHERE profile_id = ? AND name = ? COLLATE NOCASE').get(toProfileId, a.name)) throw new Error(`There is already an account called "${a.name}" there. Rename one first.`)
+  if (db.prepare('SELECT 1 FROM account WHERE profile_id = ? AND fold(name) = fold(?)').get(toProfileId, a.name)) throw new Error(`There is already an account called "${a.name}" there. Rename one first.`)
 
   const goals = db.prepare('SELECT g.name FROM goal g WHERE g.account_id = ? UNION SELECT g.name FROM goal g JOIN goal_debt d ON d.goal_id = g.id WHERE d.account_id = ?').all(accountId, accountId) as { name: string }[]
   if (goals.length) throw new Error(`The goal "${goals[0]!.name}" uses this account. Edit or delete that goal first.`)
@@ -95,7 +95,7 @@ export function moveAccount(db: Db, accountId: number, toProfileId: number): { m
       if (oldId === null) return null
       if (catFor.has(oldId)) return catFor.get(oldId)!
       const c = db.prepare('SELECT name, kind, group_name AS g FROM category WHERE id = ?').get(oldId) as { name: string; kind: string; g: string | null }
-      let hit = db.prepare('SELECT id FROM category WHERE profile_id = ? AND kind = ? AND name = ? COLLATE NOCASE').get(toProfileId, c.kind, c.name) as { id: number } | undefined
+      let hit = db.prepare('SELECT id FROM category WHERE profile_id = ? AND kind = ? AND fold(name) = fold(?)').get(toProfileId, c.kind, c.name) as { id: number } | undefined
       if (!hit) {
         hit = { id: Number(db.prepare('INSERT INTO category (profile_id, name, kind, group_name) VALUES (?,?,?,?)').run(toProfileId, c.name, c.kind, c.g).lastInsertRowid) }
         created++
